@@ -10,6 +10,7 @@ class LogicalSource:
     reference_formulation: str
     iterator: str | None = None
     query: str | None = None
+    namespaces: dict[str, str] | None = None
 
 
 @dataclass(slots=True)

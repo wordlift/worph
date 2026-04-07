@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import sqlite3
 import xml.etree.ElementTree as ET
 import zipfile
@@ -22,6 +23,15 @@ class Record:
 
 def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     return {str(k): v for k, v in row.items()}
+
+
+def _normalize_scalar(value: Any) -> Any:
+    if value is None:
+        return None
+    text = str(value)
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        return text[1:-1]
+    return text
 
 
 def iter_csv(path: str, delimiter: str = ",") -> Iterable[Record]:
@@ -176,11 +186,37 @@ def _normalize_xpath(expr: str) -> str:
     return expr
 
 
-def _xpath_values(element: ET.Element, expr: str) -> list[str]:
+_XPATH_PREFIX_ATTR_RE = re.compile(r"@([A-Za-z_][\w.-]*):([A-Za-z_][\w.-]*)")
+_XPATH_PREFIX_ELEM_RE = re.compile(r"(?<![@\w-])([A-Za-z_][\w.-]*):([A-Za-z_][\w.-]*)")
+
+
+def _xpath_local_name_fallback(expr: str) -> str:
+    fallback = _XPATH_PREFIX_ATTR_RE.sub(r"@*[local-name()='\2']", expr)
+    fallback = _XPATH_PREFIX_ELEM_RE.sub(r"*[local-name()='\2']", fallback)
+    return fallback
+
+
+def _xpath_select(element: ET.Element, expr: str, namespaces: dict[str, str] | None = None):
+    normalized = _normalize_xpath(expr)
     try:
-        value = elementpath.select(element, _normalize_xpath(expr))
+        value = elementpath.select(element, normalized, namespaces=namespaces)
+        if isinstance(value, list) and not value and ":" in normalized:
+            fallback_expr = _xpath_local_name_fallback(normalized)
+            if fallback_expr != normalized:
+                value = elementpath.select(element, fallback_expr, namespaces=namespaces)
+        return value
     except Exception:
+        if ":" in normalized:
+            try:
+                fallback_expr = _xpath_local_name_fallback(normalized)
+                return elementpath.select(element, fallback_expr, namespaces=namespaces)
+            except Exception:
+                return []
         return []
+
+
+def _xpath_values(element: ET.Element, expr: str, namespaces: dict[str, str] | None = None) -> list[str]:
+    value = _xpath_select(element, expr, namespaces=namespaces)
 
     if isinstance(value, list):
         results: list[str] = []
@@ -200,10 +236,10 @@ def _xpath_values(element: ET.Element, expr: str) -> list[str]:
     return [str(value)]
 
 
-def iter_xml(path: str, iterator: str | None) -> Iterable[Record]:
+def iter_xml(path: str, iterator: str | None, namespaces: dict[str, str] | None = None) -> Iterable[Record]:
     tree = ET.parse(path)
     root = tree.getroot()
-    selected = elementpath.select(root, iterator or "/")
+    selected = _xpath_select(root, iterator or "/", namespaces=namespaces)
     if isinstance(selected, ET.Element):
         selected = [selected]
 
@@ -299,11 +335,16 @@ def _json_reference_values(node: Any, reference: str) -> list[Any]:
     return _json_select(node, "$." + expr if expr else "$")
 
 
-def reference_value(record: Record, formulation: str, reference: str) -> Any:
+def reference_value(
+    record: Record,
+    formulation: str,
+    reference: str,
+    namespaces: dict[str, str] | None = None,
+) -> Any:
     form = formulation.lower()
     if form == "xpath":
         if record.context is not None:
-            values = _xpath_values(record.context, reference)
+            values = _xpath_values(record.context, reference, namespaces=namespaces)
             if not values:
                 return None
             if len(values) == 1:
@@ -330,8 +371,116 @@ def reference_value(record: Record, formulation: str, reference: str) -> Any:
     return value
 
 
-def iter_records(formulation: str, source: str, iterator: str | None = None, query: str | None = None) -> Iterable[Record]:
+_FROM_SOURCE_RE = re.compile(
+    r"'([^']+)'\s*(?:AS\s+)?\"?([A-Za-z_][A-Za-z0-9_]*)?\"?",
+    flags=re.IGNORECASE,
+)
+_FROM_BLOCK_RE = re.compile(
+    r"\bFROM\b\s+(.+?)(?=\bWHERE\b|\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\b|;|$)",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+def _iter_csv_query(query: str) -> Iterable[Record]:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    try:
+        from_block_match = _FROM_BLOCK_RE.search(query)
+        if from_block_match is None:
+            return
+
+        from_block = from_block_match.group(1)
+        source_specs = []
+        for index, match in enumerate(_FROM_SOURCE_RE.finditer(from_block)):
+            csv_path = match.group(1)
+            alias = match.group(2) or f"source_{index + 1}"
+            source_specs.append((csv_path, alias))
+
+        if not source_specs:
+            return
+
+        sql = query
+        for csv_path, alias in source_specs:
+            frame = pd.read_csv(csv_path)
+            frame.to_sql(alias, connection, if_exists="replace", index=False)
+            sql = sql.replace(f"'{csv_path}'", f'"{alias}"')
+
+        for row in connection.execute(sql):
+            values: dict[str, Any] = {}
+            for k in row.keys():
+                cell = row[k]
+                values[k] = None if cell is None else str(cell)
+            yield Record(values=values)
+    finally:
+        connection.close()
+
+
+def _iter_python_source(
+    formulation: str,
+    source: str,
+    iterator: str | None,
+    python_source: Any,
+) -> Iterable[Record]:
+    if not isinstance(python_source, dict) or source not in python_source:
+        return
+
+    payload = python_source[source]
+    if isinstance(payload, pd.DataFrame):
+        for _, row in payload.iterrows():
+            values: dict[str, Any] = {}
+            for col, value in row.to_dict().items():
+                if pd.isna(value):
+                    values[str(col)] = None
+                else:
+                    values[str(col)] = _normalize_scalar(value)
+            yield Record(values=values, context=payload)
+        return
+
+    if isinstance(payload, list) and all(isinstance(item, dict) for item in payload) and not iterator:
+        for item in payload:
+            normalized = {}
+            for key, value in item.items():
+                normalized[str(key)] = value if isinstance(value, (dict, list)) or value is None else str(value)
+                if not isinstance(value, (dict, list)) and value is not None:
+                    normalized[str(key)] = _normalize_scalar(value)
+            yield Record(values=normalized, context=payload)
+        return
+
+    if isinstance(payload, (dict, list)):
+        selected = _json_select(payload, iterator or "$")
+        for node in selected:
+            if isinstance(node, dict):
+                normalized = {}
+                for key, value in node.items():
+                    normalized[str(key)] = value if isinstance(value, (dict, list)) or value is None else str(value)
+                    if not isinstance(value, (dict, list)) and value is not None:
+                        normalized[str(key)] = _normalize_scalar(value)
+                yield Record(values=normalized, context=node)
+            else:
+                yield Record(values={"value": node}, context=node)
+
+
+def iter_records(
+    formulation: str,
+    source: str,
+    iterator: str | None = None,
+    query: str | None = None,
+    namespaces: dict[str, str] | None = None,
+    python_source: Any = None,
+) -> Iterable[Record]:
     form = formulation.lower()
+    if isinstance(python_source, dict) and source in python_source:
+        yield from _iter_python_source(formulation, source, iterator, python_source)
+        return
+
+    if form in {"dataframe", "dictionary"}:
+        yield from _iter_python_source(formulation, source, iterator, python_source)
+        return
+
+    if form in {"csv"} and query:
+        yield from _iter_csv_query(query)
+        return
+
     suffix = Path(source).suffix.lower()
     if suffix in {".tsv", ".parquet", ".feather", ".dta", ".xlsx", ".xls", ".ods"}:
         yield from iter_tabular(source)
@@ -340,7 +489,7 @@ def iter_records(formulation: str, source: str, iterator: str | None = None, que
         yield from iter_csv(source)
         return
     if form in {"xpath", "xml"}:
-        yield from iter_xml(source, iterator)
+        yield from iter_xml(source, iterator, namespaces=namespaces)
         return
     if form in {"jsonpath", "json"}:
         yield from iter_json(source, iterator)
@@ -364,6 +513,7 @@ def iter_source_rows(logical_source, base_path: Path | None = None) -> Iterator[
         source=source,
         iterator=logical_source.iterator,
         query=logical_source.query,
+        namespaces=getattr(logical_source, "namespaces", None),
     )
     for record in rows:
         yield dict(record.values)

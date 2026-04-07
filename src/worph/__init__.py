@@ -12,7 +12,7 @@ from worph.materializer import materialize_from_config
 
 
 def materialize(config, python_source=None):
-    return materialize_from_config(config)
+    return materialize_from_config(config, python_source=python_source)
 
 
 

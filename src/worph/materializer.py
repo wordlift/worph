@@ -15,7 +15,11 @@ from worph.fnml.engine import evaluate_fnml_call, configure_udfs
 
 
 
-def materialize_from_mapping(mapping: MappingDocument, graph: Graph | None = None) -> Graph:
+def materialize_from_mapping(
+    mapping: MappingDocument,
+    graph: Graph | None = None,
+    python_source=None,
+) -> Graph:
     rdf_graph = graph if graph is not None else Graph()
     tm_by_id = {tm.identifier: tm for tm in mapping.triples_maps}
     rows_by_tm: dict[str, list[Record]] = {}
@@ -31,6 +35,8 @@ def materialize_from_mapping(mapping: MappingDocument, graph: Graph | None = Non
                 source=triples_map.logical_source.source,
                 iterator=triples_map.logical_source.iterator,
                 query=triples_map.logical_source.query,
+                namespaces=triples_map.logical_source.namespaces,
+                python_source=python_source,
             )
         )
         rows_by_tm[triples_map.identifier] = rows
@@ -42,7 +48,12 @@ def materialize_from_mapping(mapping: MappingDocument, graph: Graph | None = Non
         formulation = triples_map.logical_source.reference_formulation
         subject_entries: list[tuple[Record, list]] = []
         for record in rows_by_tm[triples_map.identifier]:
-            subject_value = render_term_map(triples_map.subject_map, record, formulation)
+            subject_value = render_term_map(
+                triples_map.subject_map,
+                record,
+                formulation,
+                namespaces=triples_map.logical_source.namespaces,
+            )
             subject_values = subject_value if isinstance(subject_value, list) else [subject_value]
             subject_nodes = [
                 render_node(current_subject_value, triples_map.subject_map, role="subject")
@@ -69,14 +80,24 @@ def materialize_from_mapping(mapping: MappingDocument, graph: Graph | None = Non
                     if po_map.condition is not None:
                         cond_value = evaluate_fnml_call(
                             po_map.condition,
-                            lambda ref: reference_value(record, formulation, ref),
+                            lambda ref: reference_value(
+                                record,
+                                formulation,
+                                ref,
+                                namespaces=triples_map.logical_source.namespaces,
+                            ),
                         )
                         if not _is_truthy(cond_value):
                             continue
 
                     predicate_nodes = []
                     for predicate_tm in po_map.predicate_maps:
-                        p_value = render_term_map(predicate_tm, record, formulation)
+                        p_value = render_term_map(
+                            predicate_tm,
+                            record,
+                            formulation,
+                            namespaces=triples_map.logical_source.namespaces,
+                        )
                         p_node = render_node(p_value, predicate_tm, role="predicate")
                         if p_node is not None:
                             predicate_nodes.append(p_node)
@@ -87,6 +108,7 @@ def materialize_from_mapping(mapping: MappingDocument, graph: Graph | None = Non
                             object_map=object_map,
                             record=record,
                             formulation=formulation,
+                            namespaces=triples_map.logical_source.namespaces,
                             current_tm=triples_map,
                             tm_by_id=tm_by_id,
                             parent_subjects=parent_subjects,
@@ -100,7 +122,15 @@ def materialize_from_mapping(mapping: MappingDocument, graph: Graph | None = Non
     return rdf_graph
 
 
-def _render_object_map(object_map: ObjectMapSpec, record: Record, formulation: str, current_tm, tm_by_id, parent_subjects):
+def _render_object_map(
+    object_map: ObjectMapSpec,
+    record: Record,
+    formulation: str,
+    namespaces: dict[str, str] | None,
+    current_tm,
+    tm_by_id,
+    parent_subjects,
+):
     if object_map.parent_triples_map:
         parent_tm = tm_by_id.get(object_map.parent_triples_map)
         if parent_tm is None:
@@ -111,8 +141,13 @@ def _render_object_map(object_map: ObjectMapSpec, record: Record, formulation: s
             for parent_record, parent_nodes in parent_entries:
                 ok = True
                 for jc in object_map.join_conditions:
-                    child_val = reference_value(record, formulation, jc.child)
-                    parent_val = reference_value(parent_record, parent_tm.logical_source.reference_formulation, jc.parent)
+                    child_val = reference_value(record, formulation, jc.child, namespaces=namespaces)
+                    parent_val = reference_value(
+                        parent_record,
+                        parent_tm.logical_source.reference_formulation,
+                        jc.parent,
+                        namespaces=parent_tm.logical_source.namespaces,
+                    )
                     if child_val != parent_val:
                         ok = False
                         break
@@ -122,7 +157,12 @@ def _render_object_map(object_map: ObjectMapSpec, record: Record, formulation: s
 
         # No join condition: if same source, use current row for parent subject construction; otherwise fallback to all parent subjects.
         if parent_tm.logical_source.source == current_tm.logical_source.source:
-            parent_subject_value = render_term_map(parent_tm.subject_map, record, current_tm.logical_source.reference_formulation)
+            parent_subject_value = render_term_map(
+                parent_tm.subject_map,
+                record,
+                current_tm.logical_source.reference_formulation,
+                namespaces=current_tm.logical_source.namespaces,
+            )
             values = parent_subject_value if isinstance(parent_subject_value, list) else [parent_subject_value]
             nodes = [render_node(v, parent_tm.subject_map, role="object") for v in values]
             return [n for n in nodes if n is not None]
@@ -135,7 +175,12 @@ def _render_object_map(object_map: ObjectMapSpec, record: Record, formulation: s
         return []
     language = object_map.term_map.language
     if object_map.term_map.language_map is not None:
-        lang_value = render_term_map(object_map.term_map.language_map, record, formulation)
+        lang_value = render_term_map(
+            object_map.term_map.language_map,
+            record,
+            formulation,
+            namespaces=namespaces,
+        )
         if isinstance(lang_value, list):
             language = str(lang_value[0]) if lang_value else None
         elif lang_value is not None:
@@ -154,7 +199,7 @@ def _render_object_map(object_map: ObjectMapSpec, record: Record, formulation: s
             function_call=term_map.function_call,
         )
 
-    value = render_term_map(term_map, record, formulation)
+    value = render_term_map(term_map, record, formulation, namespaces=namespaces)
     if isinstance(value, list):
         nodes = []
         for item in value:
@@ -166,13 +211,13 @@ def _render_object_map(object_map: ObjectMapSpec, record: Record, formulation: s
     return [node] if node is not None else []
 
 
-def materialize_from_config(config_input: str | Path) -> Graph:
+def materialize_from_config(config_input: str | Path, python_source=None) -> Graph:
     runtime_config = parse_runtime_config(config_input)
     configure_udfs(runtime_config.udfs)
     merged = Graph()
     for mapping_path in runtime_config.mappings:
         mapping_doc = load_mapping(mapping_path, runtime_config)
-        materialize_from_mapping(mapping_doc, graph=merged)
+        materialize_from_mapping(mapping_doc, graph=merged, python_source=python_source)
     return merged
 
 

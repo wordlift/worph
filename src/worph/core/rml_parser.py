@@ -14,6 +14,7 @@ RR = "http://www.w3.org/ns/r2rml#"
 FNML = "http://semweb.mmlab.be/ns/fnml#"
 FNO = "https://w3id.org/function/ontology#"
 QL = "http://semweb.mmlab.be/ns/ql#"
+SD = "https://w3id.org/okn/o/sd#"
 DEFAULT_GRAPH = URIRef(RML + "defaultGraph")
 
 
@@ -223,8 +224,14 @@ def parse_rml(path: str, *, file_path_override: str | None = None, db_url: str |
         iterator = None
         reference_formulation = None
         query = None
+        source_from_dataset_spec = False
         if logical_source is not None:
             source = _first(graph, logical_source, [_u(RML, "source"), _u(RML_OLD, "source")])
+            if source is not None and not isinstance(source, (Literal, URIRef)):
+                dataset_name = _first(graph, source, [_u(SD, "name")])
+                if dataset_name is not None:
+                    source = dataset_name
+                    source_from_dataset_spec = True
             iterator = _first(graph, logical_source, [_u(RML, "iterator"), _u(RML_OLD, "iterator")])
             reference_formulation = _first(
                 graph,
@@ -253,19 +260,27 @@ def parse_rml(path: str, *, file_path_override: str | None = None, db_url: str |
                 query = f"SELECT * FROM {table_name}"
             reference_formulation = "sql2008"
 
+        resolved_formulation = _resolve_reference_formulation(reference_formulation)
         source_value = str(source) if source is not None else ""
         if db_url and not source_value:
             source_value = db_url
-        elif file_path_override:
+        elif file_path_override and resolved_formulation not in {"dataframe", "dictionary"}:
             source_value = file_path_override
-        elif source_value and not os.path.isabs(source_value) and not source_value.startswith("sqlite:///"):
+        elif (
+            source_value
+            and not source_from_dataset_spec
+            and resolved_formulation not in {"dataframe", "dictionary"}
+            and not os.path.isabs(source_value)
+            and not source_value.startswith("sqlite:///")
+        ):
             source_value = source_value if os.path.exists(source_value) else os.path.join(os.path.dirname(path), source_value)
 
         ls = LogicalSource(
             source=source_value,
-            reference_formulation=_resolve_reference_formulation(reference_formulation),
+            reference_formulation=resolved_formulation,
             iterator=str(iterator) if iterator is not None else None,
             query=str(query) if query is not None else None,
+            namespaces=prefixes,
         )
 
         subject_node = _first(graph, tm, [_u(RR, "subjectMap"), _u(RML, "subjectMap"), _u(RML_OLD, "subjectMap")])
