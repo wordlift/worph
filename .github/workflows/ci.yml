@@ -48,7 +48,7 @@ jobs:
         env:
           PYTHONPATH: .ci_shims:src
         run: |
-          pytest -q
+          uv run pytest -q
 
       - name: Prepare example fixtures
         run: |
