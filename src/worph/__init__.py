@@ -114,7 +114,7 @@ def _mapping_text_has_fnml(path: Path) -> bool:
 def _use_local_backend(config) -> bool:
     for mapping_path in _to_mapping_paths(config):
         mapping_path_text = mapping_path.as_posix().lower()
-        if mapping_path.suffix.lower() == ".yarrrml":
+        if mapping_path.suffix.lower() in {".yarrrml", ".yml", ".yaml"}:
             return True
         if "/rml-fnml/" in mapping_path_text:
             return True

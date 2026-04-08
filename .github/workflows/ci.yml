@@ -113,15 +113,15 @@ jobs:
             "$@"
           }
 
-          run_example "csv-config" python -m worph examples/csv/config.ini
-          run_example "json-config" python -m worph examples/json/config.ini
-          run_example "xml-config" python -m worph examples/xml/config.ini
-          run_example "postgres-config" python -m worph examples/postgres/config.ini
-          run_example "rdb-config" bash -lc 'cd examples/rdb && python -m worph config.ini'
-          run_example "s3-parquet-config" python -m worph examples/s3_parquet/config.ini
-          run_example "dataframe-script" python examples/dataframe/kg_generation.py
-          run_example "dict-script" python examples/dict/kg_generation.py
-          run_example "dynamic-api-token" python examples/dynamic_api_token.py
+          run_example "csv-config" uv run python -m worph examples/csv/config.ini
+          run_example "json-config" uv run python -m worph examples/json/config.ini
+          run_example "xml-config" uv run python -m worph examples/xml/config.ini
+          run_example "postgres-config" uv run python -m worph examples/postgres/config.ini
+          run_example "rdb-config" bash -lc 'cd examples/rdb && uv run python -m worph config.ini'
+          run_example "s3-parquet-config" uv run python -m worph examples/s3_parquet/config.ini
+          run_example "dataframe-script" uv run python examples/dataframe/kg_generation.py
+          run_example "dict-script" uv run python examples/dict/kg_generation.py
+          run_example "dynamic-api-token" uv run python examples/dynamic_api_token.py
 
   publish:
     if: startsWith(github.ref, 'refs/tags/')

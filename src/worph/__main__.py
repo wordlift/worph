@@ -1,38 +1,36 @@
 from __future__ import annotations
 
-import importlib.metadata as importlib_metadata
-import importlib.util
-import sys
 from pathlib import Path
+import sys
 
-_UPSTREAM_MAIN_MODULE = "_worph_upstream_morph_kgc_main"
+from worph import materialize
+from worph.core.config import parse_runtime_config
 
 
-def _load_upstream_main():
-    module = sys.modules.get(_UPSTREAM_MAIN_MODULE)
-    if module is not None:
-        return module
-
-    main_path = importlib_metadata.distribution("morph-kgc").locate_file("morph_kgc/__main__.py")
-    package_dir = Path(main_path).parent
-    spec = importlib.util.spec_from_file_location(
-        _UPSTREAM_MAIN_MODULE,
-        str(main_path),
-        submodule_search_locations=[str(package_dir)],
-    )
-    if spec is None or spec.loader is None:
-        raise ImportError("Unable to load upstream morph-kgc CLI backend")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[_UPSTREAM_MAIN_MODULE] = module
-    spec.loader.exec_module(module)
-    return module
+_OUTPUT_FORMATS = {
+    "N-TRIPLES": "nt",
+    "N-QUADS": "nquads",
+    "TURTLE": "turtle",
+    "RDF/XML": "xml",
+    "JSON-LD": "json-ld",
+}
 
 
 def main(argv: list[str] | None = None) -> int:
-    upstream = _load_upstream_main()
-    if argv is None:
-        return int(upstream.main())
-    return int(upstream.main(argv))
+    cli_args = list(sys.argv[1:] if argv is None else argv)
+    if len(cli_args) != 1:
+        print("Usage: python -m worph <config.ini>", file=sys.stderr)
+        return 2
+
+    config_path = cli_args[0]
+    runtime_config = parse_runtime_config(config_path)
+    graph = materialize(config_path)
+
+    output_path = Path(runtime_config.output_file or "knowledge-graph.nt")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_format = _OUTPUT_FORMATS.get(runtime_config.output_format.upper(), "nt")
+    graph.serialize(destination=str(output_path), format=output_format)
+    return 0
 
 
 if __name__ == "__main__":

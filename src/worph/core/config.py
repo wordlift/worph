@@ -3,6 +3,7 @@ from __future__ import annotations
 import configparser
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 @dataclass(slots=True)
@@ -20,6 +21,28 @@ class RuntimeConfig:
 
 def _split_mappings(raw: str) -> list[str]:
     return [p.strip() for p in raw.replace(";", ",").split(",") if p.strip()]
+
+
+def _has_uri_scheme(value: str) -> bool:
+    return bool(urlparse(value).scheme)
+
+
+def _resolve_relative_path(value: str, source_path: Path | None) -> str:
+    if source_path is None:
+        return value
+    path = Path(value)
+    if path.is_absolute():
+        return value
+    return str((source_path.parent / path).resolve())
+
+
+def _resolve_db_url(db_url: str, source_path: Path | None) -> str:
+    if db_url.startswith("sqlite:///"):
+        sqlite_path = db_url[len("sqlite:///") :]
+        if sqlite_path and not Path(sqlite_path).is_absolute():
+            return f"sqlite:///{(source_path.parent / sqlite_path).resolve()}" if source_path else db_url
+        return db_url
+    return db_url
 
 
 def parse_runtime_config(config: str | Path | None) -> RuntimeConfig:
@@ -63,6 +86,11 @@ def parse_runtime_config(config: str | Path | None) -> RuntimeConfig:
 
     if not mappings:
         raise ValueError("DataSource.mappings is required")
+
+    if file_path and not _has_uri_scheme(file_path):
+        file_path = _resolve_relative_path(file_path, source_path)
+    if db_url:
+        db_url = _resolve_db_url(db_url, source_path)
 
     output_format = "N-TRIPLES"
     output_file = None
