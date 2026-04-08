@@ -114,7 +114,10 @@ def _mapping_text_has_fnml(path: Path) -> bool:
 def _use_local_backend(config) -> bool:
     for mapping_path in _to_mapping_paths(config):
         mapping_path_text = mapping_path.as_posix().lower()
-        if mapping_path.suffix.lower() in {".yarrrml", ".yml", ".yaml"}:
+        is_examples_mapping = "/examples/" in mapping_path_text or mapping_path_text.startswith("examples/")
+        if mapping_path.suffix.lower() == ".yarrrml":
+            return True
+        if mapping_path.suffix.lower() in {".yml", ".yaml"} and is_examples_mapping:
             return True
         if "/rml-fnml/" in mapping_path_text:
             return True
@@ -144,30 +147,24 @@ def _graph_to_set(graph: Graph) -> set[str]:
 
 
 def materialize(config, python_source=None):
-    if _use_local_backend(config):
-        return materialize_from_config(config, python_source=python_source)
-    return _load_upstream().materialize(config, python_source=python_source)
+    return materialize_from_config(config, python_source=python_source)
 
 
 def materialize_oxigraph(config, python_source=None):
-    if _use_local_backend(config):
-        triples = materialize_set(config, python_source=python_source)
-        graph = Store()
-        if triples:
-            rdf_nquads = ".\n".join(triples) + "."
-            graph.bulk_load(BytesIO(rdf_nquads.encode()), "application/n-quads")
-        return graph
-    return _load_upstream().materialize_oxigraph(config, python_source=python_source)
+    triples = materialize_set(config, python_source=python_source)
+    graph = Store()
+    if triples:
+        rdf_nquads = ".\n".join(triples) + "."
+        graph.bulk_load(BytesIO(rdf_nquads.encode()), "application/n-quads")
+    return graph
 
 
 def materialize_set(config, python_source=None):
-    if _use_local_backend(config):
-        return _graph_to_set(materialize_from_config(config, python_source=python_source))
-    return _load_upstream().materialize_set(config, python_source=python_source)
+    return _graph_to_set(materialize_from_config(config, python_source=python_source))
 
 
 def materialize_kafka(config, python_source=None):
-    return _load_upstream().materialize_kafka(config, python_source=python_source)
+    raise NotImplementedError("materialize_kafka is not implemented in worph yet")
 
 
 def translate_to_rml(mapping_path):
