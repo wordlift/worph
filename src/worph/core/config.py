@@ -28,10 +28,12 @@ def _has_uri_scheme(value: str) -> bool:
 
 
 def _resolve_relative_path(value: str, source_path: Path | None) -> str:
-    if source_path is None:
-        return value
     path = Path(value)
     if path.is_absolute():
+        return value
+    if path.exists():
+        return str(path.resolve())
+    if source_path is None:
         return value
     return str((source_path.parent / path).resolve())
 

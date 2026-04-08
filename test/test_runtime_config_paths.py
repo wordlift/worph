@@ -37,3 +37,23 @@ def test_parse_runtime_config_keeps_existing_repo_relative_sqlite_path(tmp_path:
     runtime = parse_runtime_config(config_path)
 
     assert runtime.db_url == f"sqlite:///{db_path.resolve()}"
+
+
+def test_parse_runtime_config_keeps_existing_repo_relative_file_path(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    config_dir = repo / "examples" / "s3_parquet"
+    config_dir.mkdir(parents=True)
+    data_path = repo / "examples" / "s3_parquet" / "data.parquet"
+    data_path.write_text("", encoding="utf-8")
+    config_path = config_dir / "config.ini"
+    config_path.write_text(
+        "[DataSource1]\n"
+        "mappings: mapping.ttl\n"
+        "file_path: examples/s3_parquet/data.parquet\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    runtime = parse_runtime_config(config_path)
+
+    assert runtime.file_path == str(data_path.resolve())
