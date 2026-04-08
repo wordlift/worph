@@ -24,7 +24,7 @@ for path in * .*; do
   rm -rf -- "$path"
 done
 
-mkdir -p src/morph_kgc
+mkdir -p src/worph
 
 cat > .gitignore <<'GITIGNORE'
 __pycache__/
@@ -40,7 +40,7 @@ build/
 GITIGNORE
 
 cat > README.md <<'README'
-# morph-kgc v2 rewrite branch
+# worph v2 rewrite branch
 
 This branch is a clean-slate rewrite baseline.
 
@@ -49,7 +49,7 @@ Retained assets:
 - `specs/` planning and contracts
 - `AGENTS.md`
 
-New implementation starts under `src/morph_kgc/`.
+New implementation starts under `src/worph/`.
 README
 
 cat > pyproject.toml <<'PYPROJECT'
@@ -58,9 +58,9 @@ requires = ["hatchling>=1.11.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "morph_kgc"
+name = "worph"
 version = "2.0.0a0"
-description = "Rewrite baseline for Morph-KGC v2"
+description = "Rewrite baseline for worph v2"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
@@ -69,42 +69,42 @@ dependencies = []
 test = ["pytest>=8.0.0,<9.0.0"]
 
 [project.scripts]
-morph-kgc = "morph_kgc.__main__:main"
+worph = "worph.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/morph_kgc"]
+packages = ["src/worph"]
 PYPROJECT
 
-cat > src/morph_kgc/__init__.py <<'PYINIT'
-"""morph_kgc v2 rewrite package."""
+cat > src/worph/__init__.py <<'PYINIT'
+"""worph v2 rewrite package."""
 
 
 def materialize(config, python_source=None):
-    raise NotImplementedError("morph_kgc v2 rewrite in progress")
+    raise NotImplementedError("worph v2 rewrite in progress")
 
 
 def materialize_oxigraph(config, python_source=None):
-    raise NotImplementedError("morph_kgc v2 rewrite in progress")
+    raise NotImplementedError("worph v2 rewrite in progress")
 
 
 def materialize_set(config, python_source=None):
-    raise NotImplementedError("morph_kgc v2 rewrite in progress")
+    raise NotImplementedError("worph v2 rewrite in progress")
 
 
 def materialize_kafka(config, python_source=None):
-    raise NotImplementedError("morph_kgc v2 rewrite in progress")
+    raise NotImplementedError("worph v2 rewrite in progress")
 
 
 def translate_to_rml(mapping_path):
-    raise NotImplementedError("morph_kgc v2 rewrite in progress")
+    raise NotImplementedError("worph v2 rewrite in progress")
 PYINIT
 
-cat > src/morph_kgc/__main__.py <<'PYMAIN'
+cat > src/worph/__main__.py <<'PYMAIN'
 import sys
 
 
 def main():
-    print("morph-kgc v2 rewrite: CLI not implemented yet", file=sys.stderr)
+    print("worph v2 rewrite: CLI not implemented yet", file=sys.stderr)
     raise SystemExit(2)
 
 
@@ -119,14 +119,15 @@ cat > specs/COMPATIBILITY.md <<'COMPAT'
 V2 must preserve user-visible behavior for supported YARRRML/RML/FNML scenarios covered by retained regression tests under `test/`.
 
 ## Initial Guarantees
-- Package name remains `morph_kgc`.
+- Primary package name is `worph`.
+- Legacy import compatibility for `morph_kgc` is provided in CI through `.ci_shims/morph_kgc`.
 - Public entry points reserved:
   - `materialize`
   - `materialize_oxigraph`
   - `materialize_set`
   - `materialize_kafka`
   - `translate_to_rml`
-- CLI command remains `morph-kgc`.
+- Primary CLI command is `worph`.
 
 ## Performance Targets
 - Establish baseline from legacy branch and require measurable improvements before release.
@@ -137,7 +138,7 @@ COMPAT
 
 echo "Running baseline verification test..."
 set +e
-PYTHONPATH=src python -m pytest test/issues/issue_328/test_prefixes_yarrrml.py
+PYTHONPATH=.ci_shims:src uv run pytest test/issues/issue_328/test_prefixes_yarrrml.py
 TEST_EXIT=$?
 set -e
 

@@ -8,7 +8,7 @@ Reset the repository to a clean rewrite baseline while preserving:
 - `AGENTS.md`
 - `docs/` (if present)
 
-Then scaffold a fresh `morph_kgc` package for a full rewrite.
+Then scaffold a fresh `worph` package for a full rewrite.
 
 ## Preconditions
 
@@ -28,13 +28,13 @@ Then scaffold a fresh `morph_kgc` package for a full rewrite.
 3. Recreate minimal project scaffolding:
    - `pyproject.toml`
    - `README.md`
-   - `src/morph_kgc/__init__.py`
-   - `src/morph_kgc/__main__.py`
+   - `src/worph/__init__.py`
+   - `src/worph/__main__.py`
    - `.gitignore`
 4. Add a compatibility contract:
    - `specs/COMPATIBILITY.md`
 5. Verify baseline by running:
-   - `PYTHONPATH=src python -m pytest test/issues/issue_328/test_prefixes_yarrrml.py`
+   - `PYTHONPATH=.ci_shims:src uv run pytest test/issues/issue_328/test_prefixes_yarrrml.py`
 6. Record outcome and next actions.
 
 ## Success Criteria

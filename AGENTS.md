@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Repository-level instructions for agents working in `morph-kgc`.
+Repository-level instructions for agents working in `worph`.
 
 ## Scope and Precedence
 
@@ -12,26 +12,25 @@ Repository-level instructions for agents working in `morph-kgc`.
 Before proposing or implementing changes:
 
 1. Read [README.md](README.md).
-2. Read [CONTRIBUTING.md](CONTRIBUTING.md).
+2. Read [CONTRIBUTING.md](CONTRIBUTING.md) if present.
 3. Inspect [pyproject.toml](pyproject.toml) for dependencies and extras.
-4. Inspect the relevant area under `src/morph_kgc/` and matching tests under `test/`.
+4. Inspect the relevant area under `src/worph/` and matching tests under `test/`.
 5. If present and relevant, read `specs/lessons-learned.md`.
 
 Do not change code before understanding the local module boundaries and nearby tests.
 
 ## Project Layout and Boundaries
 
-- Python package code lives in `src/morph_kgc/`.
+- Python package code lives in `src/worph/`.
 - Main entry points:
-  - CLI: `src/morph_kgc/__main__.py`
-  - Public API: `src/morph_kgc/__init__.py`
-  - Materialization flow: `src/morph_kgc/materializer.py`
+  - CLI: `src/worph/__main__.py`
+  - Public API: `src/worph/__init__.py`
+  - Materialization flow: `src/worph/materializer.py`
 - Core submodules:
-  - `mapping/`: mapping parsing and partitioning.
-  - `data_source/`: file/db/http/property-graph/python data ingestion.
+  - `core/`: configuration, mapping parsing, source loading, term maps, and emitters.
   - `fnml/`: FNML built-ins and execution.
 
-Respect these boundaries. Keep data-source logic in `data_source`, mapping logic in `mapping`, and function execution logic in `fnml`.
+Respect these boundaries. Keep orchestration in `materializer`, parsing/loading in `core`, and function execution logic in `fnml`.
 
 ## Build, Environment, and Dependency Rules
 
@@ -50,9 +49,10 @@ Respect these boundaries. Keep data-source logic in `data_source`, mapping logic
   - Single test file or directory under `test/...`
   - Expand only if required by impact.
 - Typical commands:
-  - `pytest test/<area>/<case>/test_*.py`
-  - `pytest test/issues/issue_<n>`
-  - `pytest` (full suite only when needed)
+  - `uv run pytest test/<area>/<case>/test_*.py`
+  - `uv run pytest test/issues/issue_<n>`
+  - `PYTHONPATH=.ci_shims:src uv run pytest -q` (compat mode/full suite)
+  - `uv run pytest` (full suite, non-shim mode)
 - For behavior changes, update/add tests in the closest existing test area.
 - Do not claim completion without reporting what tests were run and their results.
 

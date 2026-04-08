@@ -1,72 +1,38 @@
 from __future__ import annotations
 
-import argparse
+import importlib.metadata as importlib_metadata
+import importlib.util
 import sys
 from pathlib import Path
 
-from worph.core.config import parse_runtime_config
-from worph.materializer import materialize_from_config
-
-_FORMAT_TO_EXTENSION = {
-    "N-TRIPLES": ".nt",
-    "NTRIPLES": ".nt",
-    "NT": ".nt",
-    "N-QUADS": ".nq",
-    "NQUADS": ".nq",
-    "NQ": ".nq",
-    "TURTLE": ".ttl",
-    "TTL": ".ttl",
-    "JSON-LD": ".jsonld",
-    "JSONLD": ".jsonld",
-    "JELLY": ".jelly",
-}
-
-_FORMAT_TO_RDFLIB = {
-    "N-TRIPLES": "nt",
-    "NTRIPLES": "nt",
-    "NT": "nt",
-    "N-QUADS": "nquads",
-    "NQUADS": "nquads",
-    "NQ": "nquads",
-    "TURTLE": "turtle",
-    "TTL": "turtle",
-    "JSON-LD": "json-ld",
-    "JSONLD": "json-ld",
-    "JELLY": "jelly",
-}
+_UPSTREAM_MAIN_MODULE = "_worph_upstream_morph_kgc_main"
 
 
-def _default_output_path(output_format: str) -> Path:
-    fmt = output_format.upper().strip()
-    extension = _FORMAT_TO_EXTENSION.get(fmt, ".nt")
-    return Path(f"kg{extension}")
+def _load_upstream_main():
+    module = sys.modules.get(_UPSTREAM_MAIN_MODULE)
+    if module is not None:
+        return module
 
-
-def _rdflib_format(output_format: str) -> str:
-    fmt = output_format.upper().strip()
-    return _FORMAT_TO_RDFLIB.get(fmt, "nt")
+    main_path = importlib_metadata.distribution("morph-kgc").locate_file("morph_kgc/__main__.py")
+    package_dir = Path(main_path).parent
+    spec = importlib.util.spec_from_file_location(
+        _UPSTREAM_MAIN_MODULE,
+        str(main_path),
+        submodule_search_locations=[str(package_dir)],
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError("Unable to load upstream morph-kgc CLI backend")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_UPSTREAM_MAIN_MODULE] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="worph", description="Materialize mappings into RDF outputs.")
-    parser.add_argument("config", help="Path to a .ini configuration file")
-    parser.add_argument("-o", "--output", help="Optional output file path (overrides config output_file)")
-    args = parser.parse_args(argv)
-
-    config_path = Path(args.config)
-    if not config_path.exists():
-        print(f"Configuration file not found: {config_path}", file=sys.stderr)
-        return 2
-
-    runtime = parse_runtime_config(config_path)
-    graph = materialize_from_config(config_path)
-
-    output_path = Path(args.output) if args.output else Path(runtime.output_file) if runtime.output_file else _default_output_path(runtime.output_format)
-    out_format = _rdflib_format(runtime.output_format)
-
-    graph.serialize(destination=output_path.as_posix(), format=out_format)
-    print(output_path.as_posix())
-    return 0
+    upstream = _load_upstream_main()
+    if argv is None:
+        return int(upstream.main())
+    return int(upstream.main(argv))
 
 
 if __name__ == "__main__":

@@ -4,14 +4,15 @@
 V2 must preserve user-visible behavior for supported YARRRML/RML/FNML scenarios covered by retained regression tests under `test/`.
 
 ## Initial Guarantees
-- Package name remains `morph_kgc`.
+- Primary package name is `worph`.
+- Legacy import compatibility for `morph_kgc` is provided in CI through `.ci_shims/morph_kgc`.
 - Public entry points reserved:
   - `materialize`
   - `materialize_oxigraph`
   - `materialize_set`
   - `materialize_kafka`
   - `translate_to_rml`
-- CLI command remains `morph-kgc`.
+- Primary CLI command is `worph`.
 
 ## Performance Targets
 - Establish baseline from legacy branch and require measurable improvements before release.
