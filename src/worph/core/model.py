@@ -41,6 +41,7 @@ class JoinCondition:
 class ObjectMapSpec:
     term_map: TermMap | None = None
     parent_triples_map: str | None = None
+    quoted_triples_map: str | None = None
     join_conditions: list[JoinCondition] = field(default_factory=list)
 
 
@@ -56,6 +57,8 @@ class TriplesMap:
     identifier: str
     logical_source: LogicalSource
     subject_map: TermMap
+    subject_quoted_triples_map: str | None = None
+    asserted: bool = True
     class_iris: list[str] = field(default_factory=list)
     has_named_graphs: bool = False
     po_maps: list[PredicateObjectMap] = field(default_factory=list)

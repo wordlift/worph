@@ -1168,6 +1168,15 @@ def string_concat(string1, string2, separator=""):
 
 
 @bif(
+    fun_id="equal",
+    str1="str1",
+    str2="str2",
+)
+def equal(str1, str2):
+    return str(str(str1) == str(str2)).lower()
+
+
+@bif(
     fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#string_trim",
     string="http://users.ugent.be/~bjdmeest/function/grel.ttl#valueParameter",
 )

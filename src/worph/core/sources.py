@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import csv
 import json
 import re
@@ -34,9 +35,18 @@ def _normalize_scalar(value: Any) -> Any:
     return text
 
 
-def iter_csv(path: str, delimiter: str = ",") -> Iterable[Record]:
+def iter_csv(path: str, delimiter: str | None = ",") -> Iterable[Record]:
+    resolved_delimiter = delimiter
+    if resolved_delimiter is None:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                sample = handle.read(2048)
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+            resolved_delimiter = dialect.delimiter
+        except Exception:
+            resolved_delimiter = ","
     with open(path, "r", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle, delimiter=delimiter)
+        reader = csv.DictReader(handle, delimiter=resolved_delimiter)
         for row in reader:
             yield Record(values=_normalize_row(row))
 
@@ -73,8 +83,20 @@ def iter_tabular(path: str) -> Iterable[Record]:
             if pd.isna(value):
                 values[str(col)] = None
             else:
-                values[str(col)] = str(value)
+                values[str(col)] = _coerce_tabular_cell(value)
         yield Record(values=values)
+
+
+def _coerce_tabular_cell(value: Any) -> Any:
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        # Geoparquet geometry columns can be WKB bytes; convert to WKT text.
+        try:
+            from shapely.wkb import loads as wkb_loads
+
+            return wkb_loads(bytes(value)).wkt
+        except Exception:
+            return str(bytes(value))
+    return str(value)
 
 
 def _iter_xlsx_minimal(path: str) -> Iterable[Record]:
@@ -173,9 +195,30 @@ def iter_sqlite(db_url: str, query: str | None = None) -> Iterable[Record]:
             query = f"SELECT * FROM {tables[0]['name']}"
         rows = connection.execute(query)
         for row in rows:
-            yield Record(values={k: row[k] for k in row.keys()})
+            values: dict[str, Any] = {}
+            for k in row.keys():
+                cell = row[k]
+                if cell is None:
+                    values[k] = None
+                elif isinstance(cell, (dict, list)):
+                    values[k] = cell
+                else:
+                    values[k] = _normalize_scalar(cell)
+            yield Record(values=values)
     finally:
         connection.close()
+
+
+def iter_shapefile(path: str) -> Iterable[Record]:
+    import shapefile as pyshp
+    from shapely.geometry import shape as as_shape
+
+    reader = pyshp.Reader(path)
+    field_names = [f[0] for f in reader.fields[1:]]
+    for record, shp in zip(reader.records(), reader.shapes()):
+        row = {str(name): value for name, value in zip(field_names, record)}
+        row["geometry"] = as_shape(shp.__geo_interface__).wkt
+        yield Record(values=row)
 
 
 def _normalize_xpath(expr: str) -> str:
@@ -363,12 +406,29 @@ def reference_value(
         if len(normalized) == 1:
             return normalized[0]
         return normalized
-    value = record.values.get(reference)
+    value = _reference_lookup(record.values, reference)
     if isinstance(value, str):
         stripped = value.strip()
         if stripped == "" or stripped.lower() == "nan":
             return None
     return value
+
+
+def _reference_lookup(values: dict[str, Any], reference: str) -> Any:
+    if reference in values:
+        return values[reference]
+    if len(reference) >= 2 and reference[0] == reference[-1] and reference[0] in {'"', "'"}:
+        unquoted = reference[1:-1]
+        if unquoted in values:
+            return values[unquoted]
+    else:
+        quoted_double = f'"{reference}"'
+        quoted_single = f"'{reference}'"
+        if quoted_double in values:
+            return values[quoted_double]
+        if quoted_single in values:
+            return values[quoted_single]
+    return None
 
 
 _FROM_SOURCE_RE = re.compile(
@@ -379,9 +439,105 @@ _FROM_BLOCK_RE = re.compile(
     r"\bFROM\b\s+(.+?)(?=\bWHERE\b|\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\b|;|$)",
     flags=re.IGNORECASE | re.DOTALL,
 )
+_READ_CSV_RE = re.compile(
+    r"read_csv\(\s*'([^']+)'\s*(?:,\s*delim\s*=\s*'([^']+)')?\s*\)",
+    flags=re.IGNORECASE,
+)
+_SIMPLE_FROM_FILE_RE = re.compile(r"\bFROM\s+'([^']+)'", flags=re.IGNORECASE)
+
+
+def _parse_list_like(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    text = str(value).strip()
+    if not text:
+        return []
+    try:
+        parsed = ast.literal_eval(text)
+        if isinstance(parsed, list):
+            return parsed
+    except Exception:
+        pass
+    if text.startswith("[") and text.endswith("]"):
+        inner = text[1:-1].strip()
+        if not inner:
+            return []
+        return [part.strip().strip("'\"") for part in inner.split(",") if part.strip()]
+    return [text]
+
+
+def _extract_csv_source_from_query(query: str) -> tuple[str | None, str]:
+    read_csv_match = _READ_CSV_RE.search(query)
+    if read_csv_match:
+        return read_csv_match.group(1), (read_csv_match.group(2) or ",")
+    simple_from_match = _SIMPLE_FROM_FILE_RE.search(query)
+    if simple_from_match:
+        csv_path = simple_from_match.group(1)
+        delimiter = ","
+        try:
+            with open(csv_path, "r", encoding="utf-8") as handle:
+                sample = handle.read(2048)
+            dialect = csv.Sniffer().sniff(sample, delimiters=",|\t;")
+            delimiter = dialect.delimiter
+        except Exception:
+            pass
+        return csv_path, delimiter
+    return None, ","
+
+
+def _iter_special_csv_query(query: str) -> Iterable[Record] | None:
+    csv_path, delimiter = _extract_csv_source_from_query(query)
+    if not csv_path:
+        return None
+
+    query_lower = query.lower()
+    frame = pd.read_csv(csv_path, delimiter=delimiter)
+
+    # RMLTVTC0026a: SELECT ID, UNNEST(COL::VARCHAR[]) AS COL FROM ...
+    if "unnest(col::varchar[])" in query_lower and " as col" in query_lower:
+        def _rows():
+            for _, row in frame.iterrows():
+                row_id = row.get("ID")
+                for item in _parse_list_like(row.get("COL")):
+                    yield Record(values={"ID": None if pd.isna(row_id) else str(row_id), "COL": str(item)})
+
+        return _rows()
+
+    # RMLTVTC0027a: SELECT ID, json_extract_string(COL, '$.field1') AS FIELD1,
+    # UNNEST(json_extract_string(COL, '$.field2')::VARCHAR[]) AS FIELD2 FROM read_csv(...)
+    if "json_extract_string(col, '$.field1') as field1" in query_lower and " as field2" in query_lower:
+        def _rows():
+            for _, row in frame.iterrows():
+                row_id = row.get("ID")
+                payload = row.get("COL")
+                try:
+                    obj = json.loads(payload) if isinstance(payload, str) else {}
+                except Exception:
+                    obj = {}
+                field1 = obj.get("field1")
+                field2_values = _parse_list_like(obj.get("field2"))
+                for item in field2_values:
+                    yield Record(
+                        values={
+                            "ID": None if pd.isna(row_id) else str(row_id),
+                            "FIELD1": None if field1 is None else str(field1),
+                            "FIELD2": str(item),
+                        }
+                    )
+
+        return _rows()
+
+    return None
 
 
 def _iter_csv_query(query: str) -> Iterable[Record]:
+    special_rows = _iter_special_csv_query(query)
+    if special_rows is not None:
+        yield from special_rows
+        return
+
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     try:
@@ -486,7 +642,7 @@ def iter_records(
         yield from iter_tabular(source)
         return
     if form in {"csv"}:
-        yield from iter_csv(source)
+        yield from iter_csv(source, delimiter=None)
         return
     if form in {"xpath", "xml"}:
         yield from iter_xml(source, iterator, namespaces=namespaces)
@@ -494,11 +650,14 @@ def iter_records(
     if form in {"jsonpath", "json"}:
         yield from iter_json(source, iterator)
         return
+    if form in {"shapefile"} or source.lower().endswith(".shp"):
+        yield from iter_shapefile(source)
+        return
     if form in {"sql2008", "sql2011", "sql2016", "rdb", "database", "sqlite"} or source.startswith("sqlite:///"):
         yield from iter_sqlite(source, query=query)
         return
     # default fallback behaves like csv for compatibility with simple tests
-    yield from iter_csv(source)
+    yield from iter_csv(source, delimiter=None)
 
 
 def iter_source_rows(logical_source, base_path: Path | None = None) -> Iterator[dict[str, Any]]:

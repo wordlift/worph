@@ -7,8 +7,6 @@ from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.term import Node
 
 from .model import TermMap
-from .term_map import is_probable_iri
-
 
 def render_node(value: Any, term_map: TermMap, role: str) -> Node | None:
     if value is None:
@@ -36,9 +34,6 @@ def render_node(value: Any, term_map: TermMap, role: str) -> Node | None:
     if term_map.datatype or term_map.language:
         return _build_literal(value, term_map)
 
-    if is_probable_iri(value_as_text):
-        return URIRef(_encode_iri(value_as_text))
-
     return Literal(value)
 
 
@@ -53,8 +48,38 @@ def _build_literal(value: Any, term_map: TermMap) -> Literal:
     if term_map.language:
         return Literal(value, lang=term_map.language)
     if datatype is not None:
+        if str(datatype) == "http://www.w3.org/2001/XMLSchema#string":
+            # Legacy-compat behavior: xsd:string is emitted as plain literal.
+            return Literal(value)
+        if str(datatype) == "http://www.w3.org/2001/XMLSchema#integer":
+            normalized = _normalize_integer_lexical(value)
+            if normalized is not None:
+                return Literal(normalized, datatype=datatype)
         return Literal(value, datatype=datatype)
     return Literal(value)
+
+
+def _normalize_integer_lexical(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        as_float = float(text)
+    except Exception:
+        return text if text.lstrip("+-").isdigit() else None
+    if as_float.is_integer():
+        return str(int(as_float))
+    return None
 
 
 def _encode_iri(iri: str) -> str:

@@ -95,7 +95,7 @@ def _load_udfs(udf_paths: list[str]) -> dict[str, Any]:
 
 _PARAM_DEFAULTS: dict[str, JsonValue] = {
     "p_string_pattern": "%Y-%m-%d %H:%M:%S",
-    "p_string_sep": ",",
+    "p_string_sep": "",
     "modeparameter": "html",
     "param_int_i_from": 0,
     "param_int_i_opt_to": None,

@@ -118,6 +118,10 @@ def _expand_prefixed(value: Any, prefixes: dict[str, str]) -> Any:
         return value[1:-1]
     if value.startswith("$"):
         return value
+    if value == "a":
+        rdf_prefix = prefixes.get("rdf")
+        if rdf_prefix:
+            return rdf_prefix + "type"
     if ":" in value:
         prefix, suffix = value.split(":", 1)
         if prefix in prefixes:
@@ -191,7 +195,8 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
                 prefix, suffix = obj.split(":", 1)
                 if prefix in prefixes:
                     expanded = prefixes[prefix] + suffix
-            return TermMap(template=_yarrrml_template_to_rr(expanded), term_type="iri" if force_iri else "literal")
+            inferred_term_type = "iri" if (force_iri or expanded.startswith(("http://", "https://"))) else "literal"
+            return TermMap(template=_yarrrml_template_to_rr(expanded), term_type=inferred_term_type)
         if obj.startswith("$"):
             return TermMap(template=_yarrrml_template_to_rr(obj), term_type="iri" if force_iri else "literal")
         expanded = _expand_prefixed(obj, prefixes)
@@ -246,11 +251,16 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
             )
 
         if isinstance(value, str) and "$(" in value:
+            expanded = value
+            if ":" in value and not value.startswith(("http://", "https://", "<")):
+                prefix, suffix = value.split(":", 1)
+                if prefix in prefixes:
+                    expanded = prefixes[prefix] + suffix
             return TermMap(
-                template=_yarrrml_template_to_rr(value),
+                template=_yarrrml_template_to_rr(expanded),
                 datatype=datatype,
                 language=language,
-                term_type=(term_type or "literal"),
+                term_type=(term_type or ("iri" if expanded.startswith(("http://", "https://")) else "literal")),
             )
 
         const = _expand_prefixed(value, prefixes)
@@ -277,11 +287,36 @@ def _build_po_map(po_entry: dict[str, Any], prefixes: dict[str, str], external_v
         for p in pred_values
         if p is not None
     ]
-    object_maps = [
-        ObjectMapSpec(term_map=_term_map_from_object_spec(o, prefixes, external_values))
-        for o in obj_values
-        if o is not None
-    ]
+    object_maps: list[ObjectMapSpec] = []
+    for obj in obj_values:
+        if obj is None:
+            continue
+        if isinstance(obj, dict) and obj.get("mapping"):
+            parent_tm = f"yarrrml:{obj['mapping']}"
+            join_conditions = []
+            condition = obj.get("condition")
+            if isinstance(condition, dict) and str(condition.get("function", "")).lower() == "equal":
+                # Common YARRRML shorthand: parameters like [str1, $(child), s], [str2, $(parent), o]
+                child_ref = None
+                parent_ref = None
+                for param in condition.get("parameters", []):
+                    if not isinstance(param, list) or len(param) < 3:
+                        continue
+                    _, value, side = param[:3]
+                    if not isinstance(value, str) or not value.startswith("$(") or not value.endswith(")"):
+                        continue
+                    ref = value[2:-1].replace("\\", "")
+                    if str(side).lower().startswith("s"):
+                        child_ref = ref
+                    elif str(side).lower().startswith("o"):
+                        parent_ref = ref
+                if child_ref and parent_ref:
+                    from .model import JoinCondition
+
+                    join_conditions.append(JoinCondition(child=child_ref, parent=parent_ref))
+            object_maps.append(ObjectMapSpec(parent_triples_map=parent_tm, join_conditions=join_conditions))
+            continue
+        object_maps.append(ObjectMapSpec(term_map=_term_map_from_object_spec(obj, prefixes, external_values)))
 
     condition_obj = po_entry.get("condition")
     condition_call = None
@@ -333,6 +368,8 @@ def parse_yarrrml(path: str, *, file_path_override: str | None = None, db_url_ov
         )
 
         subjects = map_spec.get("subjects")
+        if subjects is None:
+            subjects = map_spec.get("s")
         if isinstance(subjects, list):
             subject_raw = subjects[0]
         else:

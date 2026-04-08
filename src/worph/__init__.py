@@ -13,7 +13,7 @@ from pyoxigraph import Store
 from rdflib import Graph
 
 from worph.core.config import parse_runtime_config
-from worph.materializer import materialize_from_config
+from worph.materializer import materialize_from_config, materialize_set_from_config
 
 _UPSTREAM_MODULE_NAME = "_worph_upstream_morph_kgc"
 
@@ -160,7 +160,7 @@ def materialize_oxigraph(config, python_source=None):
 
 
 def materialize_set(config, python_source=None):
-    return _graph_to_set(materialize_from_config(config, python_source=python_source))
+    return materialize_set_from_config(config, python_source=python_source)
 
 
 def materialize_kafka(config, python_source=None):
