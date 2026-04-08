@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/worph-logo.png" alt="worph logo" width="180">
+  <img src="https://raw.githubusercontent.com/wordlift/worph/main/assets/worph-logo.png" alt="worph logo" width="180">
 </p>
 
 # worph
@@ -86,7 +86,7 @@ Some retained tests still import `morph_kgc`. CI sets `PYTHONPATH=.ci_shims:src`
 
 Publishing to PyPI is handled inside `.github/workflows/ci.yml`.
 
-- Trigger: push a version tag like `0.1.5` or `v0.1.5`
+- Trigger: push a version tag like `0.1.6` or `v0.1.6`
 - Gate: `publish` job runs only after `test-and-examples` succeeds
 - Auth: PyPI Trusted Publisher (OIDC)
 
