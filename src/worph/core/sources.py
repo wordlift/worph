@@ -77,9 +77,10 @@ def iter_tabular(path: str) -> Iterable[Record]:
     else:
         raise ValueError(f"Unsupported tabular source extension: {ext}")
 
-    for _, row in frame.iterrows():
+    columns = list(frame.columns)
+    for row_values in frame.itertuples(index=False, name=None):
         values: dict[str, Any] = {}
-        for col, value in row.to_dict().items():
+        for col, value in zip(columns, row_values):
             if pd.isna(value):
                 values[str(col)] = None
             else:
@@ -582,9 +583,10 @@ def _iter_python_source(
 
     payload = python_source[source]
     if isinstance(payload, pd.DataFrame):
-        for _, row in payload.iterrows():
+        columns = list(payload.columns)
+        for row_values in payload.itertuples(index=False, name=None):
             values: dict[str, Any] = {}
-            for col, value in row.to_dict().items():
+            for col, value in zip(columns, row_values):
                 if pd.isna(value):
                     values[str(col)] = None
                 else:

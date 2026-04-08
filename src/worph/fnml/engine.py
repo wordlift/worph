@@ -6,7 +6,7 @@ from typing import Any
 from worph.core.model import FnmlCall
 
 from .evaluator import FunctionEvaluator
-from .registry import UnknownFunctionError, configure_default_registry
+from .registry import UnknownFunctionError, configure_default_registry, get_default_registry
 
 _TEMPLATE_PATTERN = re.compile(r"\{([^{}]+)\}")
 
@@ -22,13 +22,25 @@ def _resolve_param(param_value: Any, row_getter, evaluate_call):
     return param_value
 
 
-_DEFAULT_EVALUATOR = FunctionEvaluator.with_default_registry()
+_DEFAULT_EVALUATOR: FunctionEvaluator | None = None
+_DEFAULT_REGISTRY_ID: int | None = None
 
 
 def configure_udfs(udf_paths: list[str] | None) -> None:
-    global _DEFAULT_EVALUATOR
+    global _DEFAULT_EVALUATOR, _DEFAULT_REGISTRY_ID
     configure_default_registry(udf_paths)
-    _DEFAULT_EVALUATOR = FunctionEvaluator.with_default_registry()
+    _DEFAULT_EVALUATOR = None
+    _DEFAULT_REGISTRY_ID = None
+
+
+def _get_default_evaluator() -> FunctionEvaluator:
+    global _DEFAULT_EVALUATOR, _DEFAULT_REGISTRY_ID
+    registry = get_default_registry()
+    registry_id = id(registry)
+    if _DEFAULT_EVALUATOR is None or _DEFAULT_REGISTRY_ID != registry_id:
+        _DEFAULT_EVALUATOR = FunctionEvaluator(registry=registry)
+        _DEFAULT_REGISTRY_ID = registry_id
+    return _DEFAULT_EVALUATOR
 
 
 def _normalize_fn_result(value: Any) -> Any:
@@ -42,7 +54,7 @@ def _normalize_fn_result(value: Any) -> Any:
 
 
 def evaluate_fnml_call(call: FnmlCall, row_getter, evaluator: FunctionEvaluator | None = None) -> Any:
-    active_evaluator = evaluator or _DEFAULT_EVALUATOR
+    active_evaluator = evaluator or _get_default_evaluator()
 
     def _eval_nested(nested: FnmlCall) -> Any:
         return evaluate_fnml_call(nested, row_getter, evaluator=active_evaluator)

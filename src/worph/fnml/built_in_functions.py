@@ -34,6 +34,8 @@ def bif(fun_id, **params):
     """
 
     def wrapper(funct):
+        if fun_id in bif_dict:
+            raise ValueError(f"Duplicate FNML function id registration: {fun_id}")
         bif_dict[fun_id] = {}
         bif_dict[fun_id]['function'] = funct
         bif_dict[fun_id]['parameters'] = params
@@ -223,7 +225,7 @@ def boolean_and(bool_input: list | str):
     fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#boolean_or",
     bool_input="http://users.ugent.be/~bjdmeest/function/grel.ttl#param_rep_b",
 )
-def boolean_and(bool_input: list | str):
+def boolean_or(bool_input: list | str):
     if type(bool_input) == str:
         bool_input = [bool_input]
     return str(any([True if i.lower() in ["true", 1] else False for i in bool_input])).lower()
@@ -261,14 +263,6 @@ def boolean_true(bool_input:list|str, bool_check:list|str=None):
 ##############################################################################
 ########################   DATE   ############################################
 ##############################################################################
-
-
-@bif(
-    fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#unicodestring-s",
-    string="http://users.ugent.be/~bjdmeest/function/grel.ttl#valueParameter",
-)
-def string_unicode(string):
-    return [ord(e) for e in string]
 
 
 @bif(
@@ -356,7 +350,7 @@ def date_diff(date_1: datetime, date_2: datetime, unit: str = None) -> str:
     date="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_date_d",
     unit="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_string_unit",
 )
-def date_diff(date, unit):
+def date_date_part(date, unit):
     if type(date) == str:
         date = datetime.fromisoformat(date)
     date = date.replace(tzinfo=None)
@@ -392,7 +386,7 @@ def date_diff(date, unit):
     inc="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_dec_n",
     unit="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_string_unit",
 )
-def date_diff(date, unit, inc):
+def date_inc(date, unit, inc):
     if type(date) == str:
         date = datetime.fromisoformat(date)
     inc = int(inc)
@@ -522,7 +516,7 @@ def math_cos(value):
     fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#math_cosh",
     value="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_dec_n",
 )
-def math_cos(value):
+def math_cosh(value):
     value = literal_eval(value)
     if type(value) is not float and type(value) is not int:
         raise TypeError("The value must be a number, not " + type(value).__name__)
@@ -587,7 +581,7 @@ def math_combin(value, value2):
     fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#math_degrees",
     value="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_dec_n",
 )
-def math_atan(value):
+def math_degrees(value):
     value = literal_eval(value)
     if type(value) is not float and type(value) is not int:
         raise TypeError("The value must be a number, not " + type(value).__name__)
@@ -748,20 +742,6 @@ def math_multinomial(lst):
 
 
 @bif(
-    fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#math_mod",
-    value="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_int_i",
-    value2="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_int_i2",
-)
-def math_mod(value, value2):
-    try:
-        value = int(value)
-        value2 = int(value2)
-    except:
-        raise TypeError("The value must be a number, not " + type(value).__name__)
-    return value % value2
-
-
-@bif(
     fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#math_pow",
     value="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_dec_n",
     value2="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_any_exp",
@@ -857,7 +837,7 @@ def number_radians(number):
     start="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_int_i",
     end="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_int_i2",
 )
-def number_radians(start="0", end="1"):
+def number_random(start="0", end="1"):
     try:
         start = float(start)
         end = float(end)
@@ -978,7 +958,7 @@ def string_lastindex_of(string: str, substring: str):
     any="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_any_e",
 
 )
-def string_lastindex_of(any: str):
+def string_to_number(any: str):
     return float(any) if any else None
 
 
@@ -1098,20 +1078,11 @@ def string_rpartition(string: str, fragment, omit_fragment=False):
 
 
 @bif(
-    fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#string_contains",
-    string="http://users.ugent.be/~bjdmeest/function/grel.ttl#valueParameter",
-    substring="http://users.ugent.be/~bjdmeest/function/grel.ttl#string_sub",
-)
-def string_contains(string, substring):
-    return str(substring in string).lower()
-
-
-@bif(
     fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#string_chomp",
     string="http://users.ugent.be/~bjdmeest/function/grel.ttl#valueParameter",
     separator="http://users.ugent.be/~bjdmeest/function/grel.ttl#p_string_sep",
 )
-def string_contains(string: str, separator: str):
+def string_chomp(string: str, separator: str):
     return (
         string[0: len(string) - len(separator)]
         if str(string).endswith(separator)
@@ -1203,14 +1174,6 @@ def string_ends_with(string: str, substring: str):
 
 
 @bif(
-    fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#string_trim",
-    string="http://users.ugent.be/~bjdmeest/function/grel.ttl#valueParameter",
-)
-def string_trim(string: str):
-    return string.strip()
-
-
-@bif(
     fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#toLowerCase",
     string="http://users.ugent.be/~bjdmeest/function/grel.ttl#valueParameter",
 )
@@ -1282,30 +1245,6 @@ def hash(string):
 )
 def hash_iri(string):
     return f'http://example.com/ns#{hashlib.sha256(string.encode("UTF-8")).hexdigest()}'
-
-
-@bif(
-    fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#string_md5",
-    string="http://users.ugent.be/~bjdmeest/function/grel.ttl#valueParameter",
-)
-def string_md5(string):
-    return hashlib.md5(string.encode()).hexdigest()
-
-
-@bif(
-    fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#string_sha1",
-    string="http://users.ugent.be/~bjdmeest/function/grel.ttl#valueParameter",
-)
-def string_sha1(string):
-    return hashlib.sha1(string.encode()).hexdigest()
-
-
-@bif(
-    fun_id="http://users.ugent.be/~bjdmeest/function/grel.ttl#unicodestring-s",
-    string="http://users.ugent.be/~bjdmeest/function/grel.ttl#valueParameter",
-)
-def string_unicode(string):
-    return [ord(e) for e in string]
 
 
 @bif(

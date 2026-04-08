@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias
@@ -26,6 +27,7 @@ class QuotedTripleTerm:
 
 TermLike: TypeAlias = Node | QuotedTripleTerm
 TripleTerm: TypeAlias = tuple[TermLike, Node, TermLike]
+_CROSS_SOURCE_QUOTED_CACHE_MAX = 8
 
 
 @dataclass(slots=True)
@@ -36,6 +38,8 @@ class _RenderContext:
     subject_cache: dict[tuple[str, int], list[TermLike]]
     triples_cache: dict[tuple[str, int], list[TripleTerm]]
     in_progress: set[tuple[str, int]]
+    join_index_cache: dict[tuple[str, str, tuple[tuple[str, str], ...]], dict[tuple[object, ...], list[int]]]
+    cross_source_quoted_cache: OrderedDict[str, list[TermLike]]
 
 
 def materialize_from_mapping(
@@ -86,6 +90,8 @@ def _build_asserted_triples(mapping: MappingDocument, python_source=None) -> lis
         subject_cache={},
         triples_cache={},
         in_progress=set(),
+        join_index_cache={},
+        cross_source_quoted_cache=OrderedDict(),
     )
     asserted: list[TripleTerm] = []
     for tm in mapping.triples_maps:
@@ -98,21 +104,26 @@ def _build_asserted_triples(mapping: MappingDocument, python_source=None) -> lis
 
 
 def _collect_rows(mapping: MappingDocument, python_source=None) -> dict[str, list[Record]]:
+    rows_by_source: dict[tuple[object, ...], list[Record]] = {}
     rows_by_tm: dict[str, list[Record]] = {}
     for triples_map in mapping.triples_maps:
         if triples_map.has_named_graphs:
             continue
-        formulation = triples_map.logical_source.reference_formulation
-        rows = list(
-            iter_records(
-                formulation=formulation,
-                source=triples_map.logical_source.source,
-                iterator=triples_map.logical_source.iterator,
-                query=triples_map.logical_source.query,
-                namespaces=triples_map.logical_source.namespaces,
-                python_source=python_source,
+        source_key = _logical_source_key(triples_map)
+        rows = rows_by_source.get(source_key)
+        if rows is None:
+            formulation = triples_map.logical_source.reference_formulation
+            rows = list(
+                iter_records(
+                    formulation=formulation,
+                    source=triples_map.logical_source.source,
+                    iterator=triples_map.logical_source.iterator,
+                    query=triples_map.logical_source.query,
+                    namespaces=triples_map.logical_source.namespaces,
+                    python_source=python_source,
+                )
             )
-        )
+            rows_by_source[source_key] = rows
         rows_by_tm[triples_map.identifier] = rows
     return rows_by_tm
 
@@ -255,21 +266,16 @@ def _render_tm_row_object_terms(
         terms: list[TermLike] = []
 
         if object_map.join_conditions:
-            for parent_row_index, parent_record in enumerate(parent_rows):
-                ok = True
-                for jc in object_map.join_conditions:
-                    child_val = reference_value(record, formulation, jc.child, namespaces=namespaces)
-                    parent_val = reference_value(
-                        parent_record,
-                        parent_tm.logical_source.reference_formulation,
-                        jc.parent,
-                        namespaces=parent_tm.logical_source.namespaces,
-                    )
-                    if child_val != parent_val:
-                        ok = False
-                        break
-                if ok:
-                    terms.extend(_render_tm_row_subjects(context, parent_tm.identifier, parent_row_index))
+            index = _join_index_for(
+                context=context,
+                child_tm=current_tm,
+                parent_tm=parent_tm,
+                parent_rows=parent_rows,
+                join_conditions=object_map.join_conditions,
+            )
+            child_key = _join_key_for_row(record, formulation, namespaces, object_map.join_conditions, use_parent=False)
+            for parent_row_index in index.get(child_key, []):
+                terms.extend(_render_tm_row_subjects(context, parent_tm.identifier, parent_row_index))
             return terms
 
         if _same_logical_source(current_tm, parent_tm):
@@ -339,20 +345,80 @@ def _quoted_terms_from_map(
             terms.append(QuotedTripleTerm(subject=s_term, predicate=p_node, object_=o_term))
         return terms
 
+    cached_terms = context.cross_source_quoted_cache.get(referenced_tm.identifier)
+    if cached_terms is not None:
+        context.cross_source_quoted_cache.move_to_end(referenced_tm.identifier)
+        return cached_terms
+
     for row_index in range(len(context.rows_by_tm.get(referenced_tm.identifier, []))):
         triples = _render_tm_row_triples(context, referenced_tm.identifier, row_index)
         for s_term, p_node, o_term in triples:
             terms.append(QuotedTripleTerm(subject=s_term, predicate=p_node, object_=o_term))
+    if len(context.cross_source_quoted_cache) >= _CROSS_SOURCE_QUOTED_CACHE_MAX:
+        context.cross_source_quoted_cache.popitem(last=False)
+    context.cross_source_quoted_cache[referenced_tm.identifier] = terms
     return terms
 
 
 def _same_logical_source(left: TriplesMap, right: TriplesMap) -> bool:
-    return (
-        left.logical_source.source == right.logical_source.source
-        and left.logical_source.reference_formulation == right.logical_source.reference_formulation
-        and left.logical_source.iterator == right.logical_source.iterator
-        and left.logical_source.query == right.logical_source.query
+    return left.logical_source.equivalent_to(right.logical_source)
+
+
+def _logical_source_key(triples_map: TriplesMap) -> tuple[object, ...]:
+    return triples_map.logical_source.identity_key()
+
+
+def _hashable_value(value):
+    if isinstance(value, list):
+        return tuple(_hashable_value(v) for v in value)
+    if isinstance(value, dict):
+        return tuple(
+            sorted(
+                ((k, _hashable_value(v)) for k, v in value.items()),
+                key=lambda kv: (type(kv[0]).__name__, repr(kv[0])),
+            )
+        )
+    return value
+
+
+def _join_key_for_row(record, formulation, namespaces, join_conditions, *, use_parent: bool) -> tuple[object, ...]:
+    values = []
+    for jc in join_conditions:
+        ref = jc.parent if use_parent else jc.child
+        value = reference_value(record, formulation, ref, namespaces=namespaces)
+        values.append(_hashable_value(value))
+    return tuple(values)
+
+
+def _join_index_for(
+    context: _RenderContext,
+    child_tm: TriplesMap,
+    parent_tm: TriplesMap,
+    parent_rows: list[Record],
+    join_conditions,
+) -> dict[tuple[object, ...], list[int]]:
+    cache_key = (
+        child_tm.identifier,
+        parent_tm.identifier,
+        tuple((jc.child, jc.parent) for jc in join_conditions),
     )
+    cached = context.join_index_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    index: dict[tuple[object, ...], list[int]] = {}
+    parent_formulation = parent_tm.logical_source.reference_formulation
+    parent_namespaces = parent_tm.logical_source.namespaces
+    for parent_row_index, parent_record in enumerate(parent_rows):
+        key = _join_key_for_row(
+            parent_record,
+            parent_formulation,
+            parent_namespaces,
+            join_conditions,
+            use_parent=True,
+        )
+        index.setdefault(key, []).append(parent_row_index)
+    context.join_index_cache[cache_key] = index
+    return index
 
 
 def _serialize_triple_line(triple: TripleTerm) -> str:

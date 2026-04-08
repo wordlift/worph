@@ -51,7 +51,7 @@ jobs:
         env:
           PYTHONPATH: .ci_shims:src
         run: |
-          uv run pytest -q
+          uv run pytest -q --cov=src/worph --cov-report=term
 
       - name: Prepare example fixtures
         run: |

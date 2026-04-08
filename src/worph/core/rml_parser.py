@@ -110,29 +110,15 @@ def _parse_rml_function_execution(graph: Graph, execution_node: Any, function_de
     if function_iri is None:
         return None
 
-    parameters: list[tuple[str, Any]] = []
-    input_nodes = list(graph.objects(execution_node, _u(RML, "input")))
-    input_nodes += list(graph.objects(execution_node, _u(RML_OLD, "input")))
-    for inp in input_nodes:
-        parameter = _first(graph, inp, [_u(RML, "parameter"), _u(RML_OLD, "parameter")])
-        if parameter is None:
-            continue
-        input_value = _first(graph, inp, [_u(RML, "inputValue"), _u(RML_OLD, "inputValue")])
-        if input_value is not None:
-            parameters.append((str(parameter), _object_value(input_value)))
-            continue
-        ivm = _first(graph, inp, [_u(RML, "inputValueMap"), _u(RML_OLD, "inputValueMap")])
-        if ivm is None:
-            continue
-        nested_tm = _parse_term_map(graph, ivm, function_defs)
-        if nested_tm.function_call is not None:
-            parameters.append((str(parameter), nested_tm.function_call))
-        elif nested_tm.reference is not None:
-            parameters.append((str(parameter), {"reference": nested_tm.reference}))
-        elif nested_tm.template is not None:
-            parameters.append((str(parameter), {"template": nested_tm.template}))
-        else:
-            parameters.append((str(parameter), nested_tm.constant))
+    parameters = _parse_execution_parameters(
+        graph=graph,
+        execution_node=execution_node,
+        function_defs=function_defs,
+        input_predicates=[_u(RML, "input"), _u(RML_OLD, "input")],
+        parameter_predicates=[_u(RML, "parameter"), _u(RML_OLD, "parameter")],
+        input_value_predicates=[_u(RML, "inputValue"), _u(RML_OLD, "inputValue")],
+        input_value_map_predicates=[_u(RML, "inputValueMap"), _u(RML_OLD, "inputValueMap")],
+    )
 
     return FnmlCall(function_iri=str(function_iri), parameters=parameters)
 
@@ -144,27 +130,51 @@ def _parse_fnml_execution(graph: Graph, execution_node: Any, function_defs: dict
     if function_iri is None:
         return None
 
+    parameters = _parse_execution_parameters(
+        graph=graph,
+        execution_node=execution_node,
+        function_defs=function_defs,
+        input_predicates=[_u(FNML, "input"), _u(RML, "input"), _u(RML_OLD, "input")],
+        parameter_predicates=[_u(FNML, "parameter"), _u(RML, "parameter"), _u(RML_OLD, "parameter")],
+        input_value_predicates=[
+            _u(FNML, "inputValue"),
+            _u(FNML, "value"),
+            _u(RML, "inputValue"),
+            _u(RML_OLD, "inputValue"),
+        ],
+        input_value_map_predicates=[
+            _u(FNML, "inputValueMap"),
+            _u(FNML, "valueMap"),
+            _u(RML, "inputValueMap"),
+            _u(RML_OLD, "inputValueMap"),
+        ],
+    )
+
+    return FnmlCall(function_iri=str(function_iri), parameters=parameters)
+
+
+def _parse_execution_parameters(
+    graph: Graph,
+    execution_node: Any,
+    function_defs: dict[str, FnmlCall],
+    input_predicates: list[URIRef],
+    parameter_predicates: list[URIRef],
+    input_value_predicates: list[URIRef],
+    input_value_map_predicates: list[URIRef],
+) -> list[tuple[str, Any]]:
     parameters: list[tuple[str, Any]] = []
-    input_nodes = list(graph.objects(execution_node, _u(FNML, "input")))
-    input_nodes += list(graph.objects(execution_node, _u(RML, "input")))
-    input_nodes += list(graph.objects(execution_node, _u(RML_OLD, "input")))
+    input_nodes: list[Any] = []
+    for predicate in input_predicates:
+        input_nodes += list(graph.objects(execution_node, predicate))
     for inp in input_nodes:
-        parameter = _first(graph, inp, [_u(FNML, "parameter"), _u(RML, "parameter"), _u(RML_OLD, "parameter")])
+        parameter = _first(graph, inp, parameter_predicates)
         if parameter is None:
             continue
-        input_value = _first(
-            graph,
-            inp,
-            [_u(FNML, "inputValue"), _u(FNML, "value"), _u(RML, "inputValue"), _u(RML_OLD, "inputValue")],
-        )
+        input_value = _first(graph, inp, input_value_predicates)
         if input_value is not None:
             parameters.append((str(parameter), _object_value(input_value)))
             continue
-        ivm = _first(
-            graph,
-            inp,
-            [_u(FNML, "inputValueMap"), _u(FNML, "valueMap"), _u(RML, "inputValueMap"), _u(RML_OLD, "inputValueMap")],
-        )
+        ivm = _first(graph, inp, input_value_map_predicates)
         if ivm is None:
             continue
         nested_tm = _parse_term_map(graph, ivm, function_defs)
@@ -176,8 +186,7 @@ def _parse_fnml_execution(graph: Graph, execution_node: Any, function_defs: dict
             parameters.append((str(parameter), {"template": nested_tm.template}))
         else:
             parameters.append((str(parameter), nested_tm.constant))
-
-    return FnmlCall(function_iri=str(function_iri), parameters=parameters)
+    return parameters
 
 
 def _parse_fnml_calls(graph: Graph) -> dict[str, FnmlCall]:

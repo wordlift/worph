@@ -11,6 +11,16 @@ class LogicalSource:
     iterator: str | None = None
     query: str | None = None
     namespaces: dict[str, str] | None = None
+    _identity_key: tuple[object, ...] | None = field(default=None, init=False, repr=False)
+
+    def identity_key(self) -> tuple[object, ...]:
+        if self._identity_key is None:
+            namespaces = tuple(sorted((self.namespaces or {}).items()))
+            self._identity_key = (self.reference_formulation, self.source, self.iterator, self.query, namespaces)
+        return self._identity_key
+
+    def equivalent_to(self, other: "LogicalSource") -> bool:
+        return self.identity_key() == other.identity_key()
 
 
 @dataclass(slots=True)

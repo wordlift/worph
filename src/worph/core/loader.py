@@ -24,13 +24,26 @@ def _resolve_mapping_path(mapping_path: str, config: RuntimeConfig) -> str:
     raise FileNotFoundError(mapping_path)
 
 
+def _load_yarrrml_mapping(resolved: str, config: RuntimeConfig) -> MappingDocument:
+    return parse_yarrrml(
+        resolved,
+        file_path_override=config.file_path,
+        db_url_override=config.db_url,
+    )
+
+
+def _load_rml_mapping(resolved: str, config: RuntimeConfig) -> MappingDocument:
+    return parse_rml(resolved, file_path_override=config.file_path, db_url=config.db_url)
+
+
+_PARSER_LOADERS = {
+    "yarrrml": _load_yarrrml_mapping,
+    "rml": _load_rml_mapping,
+}
+
+
 def load_mapping(mapping_path: str, config: RuntimeConfig) -> MappingDocument:
     resolved = _resolve_mapping_path(mapping_path, config)
     ext = os.path.splitext(resolved)[1].lower()
-    if ext in YARRRML_EXTENSIONS:
-        return parse_yarrrml(
-            resolved,
-            file_path_override=config.file_path,
-            db_url_override=config.db_url,
-        )
-    return parse_rml(resolved, file_path_override=config.file_path, db_url=config.db_url)
+    loader = _PARSER_LOADERS["yarrrml"] if ext in YARRRML_EXTENSIONS else _PARSER_LOADERS["rml"]
+    return loader(resolved, config)

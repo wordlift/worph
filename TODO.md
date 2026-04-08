@@ -49,6 +49,40 @@
 - [x] Re-run full suite and confirm green.
 - [x] Re-run YARRRML/RML expert review and close gaps.
 
+## Phase 7 - Code Quality Remediation (Review-Driven)
+- [x] FNML built-in registry cleanup:
+  - Remove duplicate `fun_id` registrations.
+  - Eliminate duplicate/misleading Python function names.
+  - Add guardrails/tests for registry integrity.
+- [x] FNML evaluator state cleanup:
+  - Remove hidden mutable module-global evaluator coupling.
+  - Keep UDF configuration behavior deterministic and testable.
+- [x] Materializer maintainability and performance:
+  - Add logical-source equivalence behavior to domain model.
+  - Refactor hot paths into smaller helpers.
+  - Optimize join evaluation with indexed lookups.
+  - Cache cross-source quoted triples reuse.
+  - Reduce repeated row-materialization for equivalent logical sources.
+- [x] Term-map rendering performance:
+  - Replace recursive template expansion with iterative/tokenized expansion.
+- [x] Parser maintainability:
+  - Extract duplicated FNML parameter parsing logic.
+  - Introduce loader parser strategy map instead of hardcoded branching.
+- [x] Test hardening for review findings:
+  - Path precedence conflict tests (CWD vs config-relative).
+  - Dataframe graph-correctness assertions (not just no-crash).
+  - XPath fallback/error branch tests.
+  - CSV-query formatting variant tests.
+  - Condition truthiness matrix + recursion guard tests.
+- [ ] Full regression run:
+- [x] Full regression run:
+  - `PYTHONPATH=.ci_shims:src uv run pytest -q`
+- [x] Team re-review after fixes and iterate until no critical findings remain.
+
+## Coverage Notes
+- [x] Coverage reporting enabled in CI (`pytest-cov` + `--cov=src/worph --cov-report=term`).
+- [ ] Repository-wide 90% coverage threshold (current full-suite baseline is ~59%; requires a dedicated coverage expansion effort).
+
 ## Definition of Done
 - [x] `PYTHONPATH=.ci_shims:src uv run pytest -q` passes.
 - [x] No runtime dependency on upstream `morph_kgc` execution paths.

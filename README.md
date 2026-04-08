@@ -86,7 +86,7 @@ Some retained tests still import `morph_kgc`. CI sets `PYTHONPATH=.ci_shims:src`
 
 Publishing to PyPI is handled inside `.github/workflows/ci.yml`.
 
-- Trigger: push a version tag like `0.1.6` or `v0.1.6`
+- Trigger: push a version tag like `0.1.7` or `v0.1.7`
 - Gate: `publish` job runs only after `test-and-examples` succeeds
 - Auth: PyPI Trusted Publisher (OIDC)
 

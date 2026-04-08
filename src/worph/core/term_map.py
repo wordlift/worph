@@ -61,31 +61,23 @@ def _expand_template_values(
     namespaces: dict[str, str] | None = None,
 ) -> list[str]:
     template = template.replace("\\{", _ESC_L).replace("\\}", _ESC_R)
-    match = _TEMPLATE_PATTERN.search(template)
-    if not match:
+    matches = list(_TEMPLATE_PATTERN.finditer(template))
+    if not matches:
         return [template.replace(_ESC_L, "{").replace(_ESC_R, "}")]
 
-    token = match.group(1)
-    value = reference_value(record, formulation, token, namespaces=namespaces)
-    values = value if isinstance(value, list) else [value]
-    if not values:
-        return []
+    expanded: list[str] = [template]
+    for match in matches:
+        token = match.group(1)
+        value = reference_value(record, formulation, token, namespaces=namespaces)
+        values = value if isinstance(value, list) else [value]
+        concrete_values = [v for v in values if v is not None]
+        if not concrete_values:
+            return []
+        replacement_pattern = "{" + token + "}"
+        next_expanded: list[str] = []
+        for partial in expanded:
+            for item in concrete_values:
+                next_expanded.append(partial.replace(replacement_pattern, str(item), 1))
+        expanded = next_expanded
 
-    start, end = match.span()
-    head = template[:start]
-    tail = template[end:]
-
-    expanded: list[str] = []
-    for item in values:
-        if item is None:
-            continue
-        replacement = "" if item is None else str(item)
-        expanded.extend(
-            _expand_template_values(
-                head + replacement + tail,
-                record,
-                formulation,
-                namespaces=namespaces,
-            )
-        )
-    return expanded
+    return [item.replace(_ESC_L, "{").replace(_ESC_R, "}") for item in expanded]
