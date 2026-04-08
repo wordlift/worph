@@ -1,45 +1,100 @@
+<p align="center">
+  <img src="assets/worph-logo.png" alt="worph logo" width="180">
+</p>
+
 # worph
 
 [![CI](https://github.com/wordlift/worph/actions/workflows/ci.yml/badge.svg)](https://github.com/wordlift/worph/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/worph.svg)](https://pypi.org/project/worph/)
-[![Python versions](https://img.shields.io/pypi/pyversions/worph.svg)](https://pypi.org/project/worph/)
+[![Python](https://img.shields.io/badge/python-3.10%20to%203.13-3776AB?logo=python&logoColor=white)](https://github.com/wordlift/worph/blob/main/pyproject.toml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-![worph logo](assets/worph-logo.png)
+`worph` is a public project at [`wordlift/worph`](https://github.com/wordlift/worph), forked from [`morph-kgc`](https://github.com/morph-kgc/morph-kgc). It keeps compatibility with retained `morph_kgc` imports while evolving the primary implementation under `src/worph/`.
 
-`worph` is a public GitHub project at [`wordlift/worph`](https://github.com/wordlift/worph), forked from [`morph-kgc`](https://github.com/morph-kgc/morph-kgc), with a focus on a clean next-generation rewrite.
+## Table of Contents
 
-## Current Scope
+- [Overview](#overview)
+- [Repository Layout](#repository-layout)
+- [Quick Start](#quick-start)
+- [CLI Commands](#cli-commands)
+- [Testing](#testing)
+- [Compatibility](#compatibility)
+- [Documentation](#documentation)
+- [Release](#release)
+- [License](#license)
 
-- Keep regression coverage and planning assets (`test/`, `specs/`, `AGENTS.md`, `docs/`)
-- Build and evolve the primary implementation under `src/worph/`
-- Preserve legacy import compatibility in CI via `.ci_shims/morph_kgc -> worph`
+## Overview
 
-## Compatibility in CI
+`worph` provides RML/YARRRML materialization flows with compatibility for existing `morph_kgc` consumers. The codebase includes regression suites and compatibility shims used in CI to validate behavior against retained tests.
 
-Some retained tests still import `morph_kgc`. CI runs with:
+## Repository Layout
+
+- `src/worph/`: primary package implementation
+- `.ci_shims/morph_kgc/`: compatibility shim re-exporting from `worph`
+- `test/`: regression and issue-driven test suites
+- `examples/`: runnable configs and sample scripts
+- `specs/`: compatibility and playbook documents
+- `docs/`: operational documentation
+
+## Quick Start
+
+```bash
+uv sync --extra test
+uv run python -m worph examples/csv/config.ini
+```
+
+## CLI Commands
+
+Run using the package entrypoint:
+
+```bash
+uv run worph examples/json/config.ini
+```
+
+Equivalent module form:
+
+```bash
+uv run python -m worph examples/xml/config.ini
+```
+
+## Testing
+
+Run full CI-aligned tests with shim compatibility enabled:
 
 ```bash
 PYTHONPATH=.ci_shims:src uv run pytest -q
 ```
 
-This keeps `worph` as the real implementation while allowing `import morph_kgc` for compatibility checks.
+Run the explicit shim validation test:
 
-## Publish to PyPI
+```bash
+PYTHONPATH=.ci_shims:src uv run pytest -q test/test_ci_shim_uses_worph.py
+```
 
-Publishing is handled by GitHub Actions with OIDC Trusted Publishing:
+## Compatibility
 
-- Workflow: `.github/workflows/ci.yml` (`publish` job, gated by `test-and-examples`)
-- Trigger: push a version tag like `0.1.2` or `v0.1.2`
+Some retained tests still import `morph_kgc`. CI sets `PYTHONPATH=.ci_shims:src` so imports resolve to `.ci_shims/morph_kgc` first, then delegate to `worph`.
 
-One-time setup on `pypi.org`:
+## Documentation
 
-1. Create project `worph` (or use existing one).
-2. Add a Trusted Publisher with:
-   - Owner: `wordlift`
-   - Repository: `worph`
-   - Workflow name: `ci.yml`
-   - Environment: leave empty (unless you add one in GitHub Actions)
+- [docs/compatibility-shims.md](docs/compatibility-shims.md)
+- [specs/COMPATIBILITY.md](specs/COMPATIBILITY.md)
+- [specs/lessons-learned.md](specs/lessons-learned.md)
+
+## Release
+
+Publishing to PyPI is handled inside `.github/workflows/ci.yml`.
+
+- Trigger: push a version tag like `0.1.3` or `v0.1.3`
+- Gate: `publish` job runs only after `test-and-examples` succeeds
+- Auth: PyPI Trusted Publisher (OIDC)
+
+Trusted Publisher settings on `pypi.org`:
+
+- Owner: `wordlift`
+- Repository: `worph`
+- Workflow name: `ci.yml`
+- Environment: empty (unless you add one in GitHub)
 
 ## License
 
