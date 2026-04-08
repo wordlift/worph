@@ -1,7 +1,6 @@
 # worph
 
 [![CI](https://github.com/wordlift/worph/actions/workflows/ci.yml/badge.svg)](https://github.com/wordlift/worph/actions/workflows/ci.yml)
-[![Publish to PyPI](https://github.com/wordlift/worph/actions/workflows/publish.yml/badge.svg)](https://github.com/wordlift/worph/actions/workflows/publish.yml)
 [![PyPI version](https://img.shields.io/pypi/v/worph.svg)](https://pypi.org/project/worph/)
 [![Python versions](https://img.shields.io/pypi/pyversions/worph.svg)](https://pypi.org/project/worph/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -30,7 +29,7 @@ This keeps `worph` as the real implementation while allowing `import morph_kgc` 
 
 Publishing is handled by GitHub Actions with OIDC Trusted Publishing:
 
-- Workflow: `.github/workflows/publish.yml`
+- Workflow: `.github/workflows/ci.yml` (`publish` job, gated by `test-and-examples`)
 - Trigger: push a version tag like `0.1.2` or `v0.1.2`
 
 One-time setup on `pypi.org`:
@@ -39,7 +38,7 @@ One-time setup on `pypi.org`:
 2. Add a Trusted Publisher with:
    - Owner: `wordlift`
    - Repository: `worph`
-   - Workflow name: `publish.yml`
+   - Workflow name: `ci.yml`
    - Environment: leave empty (unless you add one in GitHub Actions)
 
 ## License

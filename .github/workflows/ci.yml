@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - rewrite/**
+    tags:
+      - "[0-9]*.[0-9]*.[0-9]*"
+      - "v[0-9]*.[0-9]*.[0-9]*"
   pull_request:
 
 jobs:
@@ -119,3 +122,32 @@ jobs:
           run_example "dataframe-script" python examples/dataframe/kg_generation.py
           run_example "dict-script" python examples/dict/kg_generation.py
           run_example "dynamic-api-token" python examples/dynamic_api_token.py
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: test-and-examples
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build package
+        run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
