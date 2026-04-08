@@ -55,7 +55,7 @@ jobs:
 
       - name: Prepare example fixtures
         run: |
-          python - <<'PY'
+          uv run python - <<'PY'
           import sqlite3
           from pathlib import Path
           import pandas as pd
