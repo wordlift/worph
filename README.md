@@ -33,7 +33,8 @@
 - `.ci_shims/morph_kgc/`: compatibility shim re-exporting from `worph`
 - `test/`: regression and issue-driven test suites
 - `examples/`: runnable configs and sample scripts
-- `specs/`: compatibility and playbook documents
+- `specs/`: compatibility, playbook, and agent-guidance documents
+- `specs/agents/`: specialist subagent briefs used during planning/review
 - `docs/`: operational documentation
 
 ## Quick Start
@@ -85,7 +86,7 @@ Some retained tests still import `morph_kgc`. CI sets `PYTHONPATH=.ci_shims:src`
 
 Publishing to PyPI is handled inside `.github/workflows/ci.yml`.
 
-- Trigger: push a version tag like `0.1.3` or `v0.1.3`
+- Trigger: push a version tag like `0.1.4` or `v0.1.4`
 - Gate: `publish` job runs only after `test-and-examples` succeeds
 - Auth: PyPI Trusted Publisher (OIDC)
 

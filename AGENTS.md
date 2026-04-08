@@ -65,20 +65,17 @@ Respect these boundaries. Keep orchestration in `materializer`, parsing/loading 
 - Do not modify unrelated files.
 - In specs/docs, use relative paths only. Do not use absolute paths.
 
-## Shared Subagents (`specs/shared`)
+## Repository Subagents (`specs/agents`)
 
-- Use `specs/shared/agents/concierge.md` first to pick the minimal specialist set.
+- Use only the minimum specialist set needed for the task.
 - Keep the loaded agent set small (max 3 specialists for most tasks).
-- Default specialist pair when uncertain: `software-architect` + `senior-developer-reviewer`.
-- Load only needed agent specs via sparse-checkout:
-
-```bash
-git -C specs/shared sparse-checkout set \
-  agents/index.yaml \
-  agents/concierge.md \
-  agents/software-architect.md \
-  agents/senior-developer-reviewer.md
-```
+- Default specialist pair when uncertain: `python-expert` + `reviewer`.
+- Available specialist briefs live in `specs/agents/`:
+  - `python-expert.md`
+  - `oop-gof-expert.md`
+  - `yarrrml-rml-rdf-xpath-expert.md`
+  - `gh-expert.md`
+  - `reviewer.md`
 
 ## Safety and Git Rules
 

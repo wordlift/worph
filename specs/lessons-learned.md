@@ -6,9 +6,9 @@
 - Lesson: Use relative paths in specs and docs; avoid absolute paths.
 - Prevention/Practice: When writing or updating specs/docs, verify links and file paths are repository-relative before finalizing.
 
-- Context: Aligning `AGENTS.md` with documentation path policy and shared subagent workflow.
-- Lesson: Repository guidance should explicitly document `specs/shared` concierge-first agent loading and keep the specialist set minimal.
-- Prevention/Practice: When editing process docs, include both path conventions and concrete sparse-checkout commands used by the team.
+- Context: Aligning `AGENTS.md` with documentation path policy and repository subagent workflow.
+- Lesson: Repository guidance should explicitly reference `specs/agents` and keep the specialist set minimal.
+- Prevention/Practice: When editing process docs, verify agent paths and specialist names exist in `specs/agents` before finalizing.
 
 ## 2026-04-08
 

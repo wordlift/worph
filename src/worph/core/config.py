@@ -40,7 +40,10 @@ def _resolve_db_url(db_url: str, source_path: Path | None) -> str:
     if db_url.startswith("sqlite:///"):
         sqlite_path = db_url[len("sqlite:///") :]
         if sqlite_path and not Path(sqlite_path).is_absolute():
-            return f"sqlite:///{(source_path.parent / sqlite_path).resolve()}" if source_path else db_url
+            candidate = Path(sqlite_path)
+            if candidate.exists():
+                return f"sqlite:///{candidate.resolve()}"
+            return f"sqlite:///{(source_path.parent / candidate).resolve()}" if source_path else db_url
         return db_url
     return db_url
 
