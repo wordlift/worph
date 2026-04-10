@@ -223,10 +223,6 @@ def iter_shapefile(path: str) -> Iterable[Record]:
 
 
 def _normalize_xpath(expr: str) -> str:
-    if "@" in expr and "/@" not in expr and not expr.strip().startswith("@"):
-        head, tail = expr.rsplit("@", 1)
-        if head and not head.endswith("/"):
-            return f"{head}/@{tail}"
     return expr
 
 
@@ -283,7 +279,11 @@ def _xpath_values(element: ET.Element, expr: str, namespaces: dict[str, str] | N
 def iter_xml(path: str, iterator: str | None, namespaces: dict[str, str] | None = None) -> Iterable[Record]:
     tree = ET.parse(path)
     root = tree.getroot()
-    selected = _xpath_select(root, iterator or "/", namespaces=namespaces)
+    normalized_iterator = (iterator or "/").strip()
+    if normalized_iterator == "/":
+        selected = [root]
+    else:
+        selected = _xpath_select(root, normalized_iterator, namespaces=namespaces)
     if isinstance(selected, ET.Element):
         selected = [selected]
 

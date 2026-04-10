@@ -14,6 +14,11 @@ PYTHONPATH=.ci_shims:src uv run pytest -q
 
 This path order ensures `import morph_kgc` resolves to the shim first, then delegates to `worph`.
 
+## XPath Behavior Note
+
+Import-level compatibility does not imply acceptance of non-standard XPath shorthand.
+`worph` expects standard XPath syntax (for example `foo/@bar`, not `foo@bar`) and does not auto-rewrite invalid shorthand forms.
+
 ## Verification
 
 Run the explicit shim validation test:

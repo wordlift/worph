@@ -10,7 +10,7 @@ This matrix defines the mandatory behavior for the worph from-scratch runtime.
 | RML/R2RML parsing | Parse triples maps, logical sources/tables, subject/predicate/object maps, joins | `test/rml-core`, `test/r2rml`, `test/rml-tv` |
 | YARRRML parsing | Parse `prefixes`, `sources`, `mappings`, PO shortcuts, function specs, `~iri` and source hints (e.g. `~shapefile`) | `test/issues/issue_254`, `test/shapefile`, `test/rml-fnml` |
 | Source loading | CSV/TSV/JSON/XML/SQLite/tabular/geospatial sources and in-memory sources | `test/rml-core`, `test/rml-in-memory`, `test/geoparquet`, `test/shapefile` |
-| Reference extraction | CSV field refs, JSONPath, XPath (with namespace fallback), SQL row refs | `test/rml-core`, `test/rml-tv` |
+| Reference extraction | CSV field refs, JSONPath, XPath (standard syntax; no shorthand auto-rewrite), SQL row refs | `test/rml-core`, `test/rml-tv` |
 | Term rendering | constant/template/reference/function precedence and node rendering by role/type | `test/rml-core`, `test/issues`, `test/r2rml` |
 | Join semantics | parent triples map joins with conditions and deterministic parent matching | `test/rml-core`, `test/rml-tv` |
 | FNML execution | nested function calls, parameter mapping, condition gating | `test/rml-fnml`, `test/issues/issue_254` |

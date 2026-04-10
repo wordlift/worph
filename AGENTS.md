@@ -64,6 +64,8 @@ Respect these boundaries. Keep orchestration in `materializer`, parsing/loading 
 - Avoid architecture changes unless explicitly requested.
 - Do not modify unrelated files.
 - In specs/docs, use relative paths only. Do not use absolute paths.
+- For XPath-based sources/references, use XPath standard syntax only.
+- Do not introduce or restore automatic rewriting of invalid XPath shorthand (for example `foo@bar`).
 
 ## Repository Subagents (`specs/agents`)
 

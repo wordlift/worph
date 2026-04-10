@@ -10,7 +10,7 @@
         rml:referenceFormulation rml:XPath;
     ];
     rml:subjectMap [
-        rml:template "http://example.com/{country@name}";
+        rml:template "http://example.com/{country/@name}";
     ];
     rml:predicateObjectMap [
         rml:predicate ex:rank;
@@ -49,6 +49,6 @@
     rml:predicateObjectMap [
         rml:predicate ex:neighbor;
         rml:objectMap [
-            rml:reference "neighbor@name";
+            rml:reference "neighbor/@name";
         ];
     ].

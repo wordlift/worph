@@ -6,6 +6,7 @@ V2 must preserve user-visible behavior for supported YARRRML/RML/FNML scenarios 
 ## Initial Guarantees
 - Primary package name is `worph`.
 - Legacy import compatibility for `morph_kgc` is provided in CI through `.ci_shims/morph_kgc`.
+- XPath behavior note: `worph` requires standard XPath syntax and does not auto-rewrite shorthand attribute forms (for example `foo@bar`).
 - Public entry points reserved:
   - `materialize`
   - `materialize_oxigraph`

@@ -76,6 +76,14 @@ PYTHONPATH=.ci_shims:src uv run pytest -q test/test_ci_shim_uses_worph.py
 
 Some retained tests still import `morph_kgc`. CI sets `PYTHONPATH=.ci_shims:src` so imports resolve to `.ci_shims/morph_kgc` first, then delegate to `worph`.
 
+XPath note (breaking change):
+
+- `worph` no longer auto-rewrites non-standard XPath shorthand attribute syntax.
+- Mappings must use standard XPath syntax (for example `foo/@bar`, not `foo@bar`).
+- Migration examples:
+  - `country@name` -> `country/@name`
+  - `neighbor@name` -> `neighbor/@name`
+
 ## Documentation
 
 - [docs/compatibility-shims.md](docs/compatibility-shims.md)
