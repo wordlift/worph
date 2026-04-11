@@ -256,15 +256,22 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
                 prefix, suffix = value.split(":", 1)
                 if prefix in prefixes:
                     expanded = prefixes[prefix] + suffix
+            infer_iri = datatype is None and language is None and expanded.startswith(("http://", "https://"))
             return TermMap(
                 template=_yarrrml_template_to_rr(expanded),
                 datatype=datatype,
                 language=language,
-                term_type=(term_type or ("iri" if expanded.startswith(("http://", "https://")) else "literal")),
+                term_type=(term_type or ("iri" if infer_iri else "literal")),
             )
 
         const = _expand_prefixed(value, prefixes)
-        guessed_term_type = term_type or ("iri" if isinstance(const, str) and const.startswith(("http://", "https://")) else "literal")
+        infer_iri = (
+            datatype is None
+            and language is None
+            and isinstance(const, str)
+            and const.startswith(("http://", "https://"))
+        )
+        guessed_term_type = term_type or ("iri" if infer_iri else "literal")
         return TermMap(
             constant=const,
             datatype=datatype,

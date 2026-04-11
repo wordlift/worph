@@ -93,3 +93,7 @@ At task completion, report:
 2. Which files were modified.
 3. Which tests were run and outcomes.
 4. Any residual risks or follow-up work.
+
+## Release Notes Sync
+
+- For release changes, ensure version references and release examples in `README.md`, `docs/`, and `specs/` are updated in the same commit as the version bump.

@@ -71,3 +71,7 @@ The workflow is complete only when:
 1. release commit is pushed
 2. release tag is pushed
 3. required GitHub workflows for that release commit are all green
+
+## Current Release Example
+
+- Patch target example: `v0.1.9`

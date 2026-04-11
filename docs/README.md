@@ -6,6 +6,10 @@ Current docs:
 
 - `compatibility-shims.md`: CI/runtime compatibility details for legacy `morph_kgc` imports.
 
+Release reference:
+
+- Current version: `0.1.9`
+
 Related process/spec references:
 
 - `../specs/agents/`: specialist subagent briefs used for planning and review workflows.
