@@ -8,7 +8,7 @@ Current docs:
 
 Release reference:
 
-- Current version: `0.1.9`
+- Current version: `0.1.10`
 
 Related process/spec references:
 

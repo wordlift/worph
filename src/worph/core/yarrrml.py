@@ -102,6 +102,8 @@ def _normalize_po_key(mapping: dict[str, Any]) -> list[dict[str, Any]]:
                 if isinstance(third, str):
                     if third.lower() == "iri":
                         obj_spec["type"] = "iri"
+                    elif third.lower().endswith("~lang"):
+                        obj_spec["language"] = third[:-5]
                     elif ":" in third:
                         obj_spec["datatype"] = third
                 normalized.append({"p": x[0], "o": obj_spec})
@@ -134,8 +136,23 @@ def _yarrrml_template_to_rr(template: str) -> str:
 
 
 def _parse_function_call(obj: dict[str, Any], prefixes: dict[str, str], external_values: dict[str, Any]) -> FnmlCall:
+    function_spec = obj["function"]
+    parameter_specs = obj.get("parameters", [])
+    if isinstance(function_spec, str) and not parameter_specs and "(" in function_spec and function_spec.endswith(")"):
+        raw_function, _, raw_args = function_spec.partition("(")
+        function_spec = raw_function.strip()
+        args = raw_args[:-1].strip()
+        if args:
+            parsed_parameters: list[dict[str, str]] = []
+            for chunk in args.split(","):
+                if "=" not in chunk:
+                    continue
+                name, value = chunk.split("=", 1)
+                parsed_parameters.append({"parameter": name.strip(), "value": value.strip()})
+            parameter_specs = parsed_parameters
+
     params: list[tuple[str, Any]] = []
-    for p in obj.get("parameters", []):
+    for p in parameter_specs:
         if not isinstance(p, dict):
             continue
         name = p.get("parameter")
@@ -169,8 +186,28 @@ def _parse_function_call(obj: dict[str, Any], prefixes: dict[str, str], external
             value = str(value)
         params.append((_expand_prefixed(name, prefixes), value))
 
-    function_iri = _expand_prefixed(obj["function"], prefixes)
+    function_iri = _expand_prefixed(function_spec, prefixes)
     return FnmlCall(function_iri=function_iri, parameters=params)
+
+
+def _parse_language_spec(language_raw: Any, external_values: dict[str, Any]) -> tuple[str | None, TermMap | None]:
+    if language_raw is None:
+        return None, None
+    if not isinstance(language_raw, str):
+        return str(language_raw), None
+
+    if re.fullmatch(r"\$\([^()]+\)", language_raw):
+        raw_ref = language_raw[2:-1]
+        escaped = raw_ref.startswith("\\")
+        ref_name = raw_ref.replace("\\", "")
+        if ref_name in external_values:
+            return str(external_values[ref_name]), None
+        if escaped and ref_name.startswith("_") and ref_name[1:] in external_values:
+            return str(external_values[ref_name[1:]]), None
+        return None, TermMap(reference=ref_name, term_type="literal")
+    if "$(" in language_raw:
+        return None, TermMap(template=_yarrrml_template_to_rr(language_raw), term_type="literal")
+    return language_raw, None
 
 
 def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_values: dict[str, Any]) -> TermMap:
@@ -195,12 +232,12 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
                 prefix, suffix = obj.split(":", 1)
                 if prefix in prefixes:
                     expanded = prefixes[prefix] + suffix
-            inferred_term_type = "iri" if (force_iri or expanded.startswith(("http://", "https://"))) else "literal"
+            inferred_term_type = "iri" if (force_iri or expanded.startswith(("http://", "https://", "urn:"))) else "literal"
             return TermMap(template=_yarrrml_template_to_rr(expanded), term_type=inferred_term_type)
         if obj.startswith("$"):
             return TermMap(template=_yarrrml_template_to_rr(obj), term_type="iri" if force_iri else "literal")
         expanded = _expand_prefixed(obj, prefixes)
-        if force_iri or (isinstance(expanded, str) and expanded.startswith(("http://", "https://"))):
+        if force_iri or (isinstance(expanded, str) and expanded.startswith(("http://", "https://", "urn:"))):
             return TermMap(constant=expanded, term_type="iri")
         return TermMap(constant=expanded, term_type="literal")
 
@@ -209,20 +246,23 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
 
     if "function" in obj:
         fn_call = _parse_function_call(obj, prefixes, external_values)
-        term_type = obj.get("type") or "literal"
+        raw_term_type = str(obj.get("type") or "literal")
+        normalized_term_type = raw_term_type.lower()
+        is_iri_type = normalized_term_type == "iri" or normalized_term_type.endswith(":iri")
         datatype = _expand_prefixed(obj.get("datatype"), prefixes)
-        language = obj.get("language")
+        language, language_map = _parse_language_spec(obj.get("language"), external_values)
         return TermMap(
             function_call=fn_call,
             datatype=datatype,
             language=language,
-            term_type=("iri" if term_type == "iri" else "literal"),
+            language_map=language_map,
+            term_type=("iri" if is_iri_type else "literal"),
         )
 
     if "value" in obj:
         value = obj["value"]
         datatype = _expand_prefixed(obj.get("datatype"), prefixes)
-        language = obj.get("language")
+        language, language_map = _parse_language_spec(obj.get("language"), external_values)
         term_type = obj.get("type")
 
         if isinstance(value, str) and value.startswith("$(") and value.endswith(")"):
@@ -234,6 +274,7 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
                     constant=external_values[ref_name],
                     datatype=datatype,
                     language=language,
+                    language_map=language_map,
                     term_type=(term_type or "literal"),
                 )
             if escaped and ref_name.startswith("_") and ref_name[1:] in external_values:
@@ -241,12 +282,14 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
                     constant=external_values[ref_name[1:]],
                     datatype=datatype,
                     language=language,
+                    language_map=language_map,
                     term_type=(term_type or "literal"),
                 )
             return TermMap(
                 reference=ref_name,
                 datatype=datatype,
                 language=language,
+                language_map=language_map,
                 term_type=(term_type or "literal"),
             )
 
@@ -256,11 +299,17 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
                 prefix, suffix = value.split(":", 1)
                 if prefix in prefixes:
                     expanded = prefixes[prefix] + suffix
-            infer_iri = datatype is None and language is None and expanded.startswith(("http://", "https://"))
+            infer_iri = (
+                datatype is None
+                and language is None
+                and language_map is None
+                and expanded.startswith(("http://", "https://", "urn:"))
+            )
             return TermMap(
                 template=_yarrrml_template_to_rr(expanded),
                 datatype=datatype,
                 language=language,
+                language_map=language_map,
                 term_type=(term_type or ("iri" if infer_iri else "literal")),
             )
 
@@ -268,14 +317,16 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
         infer_iri = (
             datatype is None
             and language is None
+            and language_map is None
             and isinstance(const, str)
-            and const.startswith(("http://", "https://"))
+            and const.startswith(("http://", "https://", "urn:"))
         )
         guessed_term_type = term_type or ("iri" if infer_iri else "literal")
         return TermMap(
             constant=const,
             datatype=datatype,
             language=language,
+            language_map=language_map,
             term_type=guessed_term_type,
         )
 
@@ -299,7 +350,8 @@ def _build_po_map(po_entry: dict[str, Any], prefixes: dict[str, str], external_v
         if obj is None:
             continue
         if isinstance(obj, dict) and obj.get("mapping"):
-            parent_tm = f"yarrrml:{obj['mapping']}"
+            mapping_target = str(obj["mapping"])
+            parent_tm = mapping_target if ":" in mapping_target else f"yarrrml:{mapping_target}"
             join_conditions = []
             condition = obj.get("condition")
             if isinstance(condition, dict) and str(condition.get("function", "")).lower() == "equal":
@@ -307,15 +359,26 @@ def _build_po_map(po_entry: dict[str, Any], prefixes: dict[str, str], external_v
                 child_ref = None
                 parent_ref = None
                 for param in condition.get("parameters", []):
-                    if not isinstance(param, list) or len(param) < 3:
+                    if isinstance(param, list) and len(param) >= 3:
+                        _, value, side = param[:3]
+                        if not isinstance(value, str) or not value.startswith("$(") or not value.endswith(")"):
+                            continue
+                        ref = value[2:-1].replace("\\", "")
+                        if str(side).lower().startswith("s"):
+                            child_ref = ref
+                        elif str(side).lower().startswith("o"):
+                            parent_ref = ref
                         continue
-                    _, value, side = param[:3]
+                    if not isinstance(param, dict):
+                        continue
+                    value = param.get("value")
                     if not isinstance(value, str) or not value.startswith("$(") or not value.endswith(")"):
                         continue
                     ref = value[2:-1].replace("\\", "")
-                    if str(side).lower().startswith("s"):
+                    parameter_name = str(param.get("parameter", "")).lower()
+                    if "str1" in parameter_name or parameter_name.endswith("1") or "child" in parameter_name:
                         child_ref = ref
-                    elif str(side).lower().startswith("o"):
+                    elif "str2" in parameter_name or parameter_name.endswith("2") or "parent" in parameter_name:
                         parent_ref = ref
                 if child_ref and parent_ref:
                     from .model import JoinCondition

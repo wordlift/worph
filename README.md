@@ -94,7 +94,7 @@ XPath note (breaking change):
 
 Publishing to PyPI is handled inside `.github/workflows/ci.yml`.
 
-- Trigger: push a version tag like `0.1.9` or `v0.1.9`
+- Trigger: push a version tag like `0.1.10` or `v0.1.10`
 - Gate: `publish` job runs only after `test-and-examples` succeeds
 - Auth: PyPI Trusted Publisher (OIDC)
 

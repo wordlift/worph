@@ -183,3 +183,63 @@ mappings:
     object_ = _object_for_predicate(graph, "http://schema.org/url")
     assert isinstance(object_, Literal)
     assert str(object_) == "https://example.com/faq/"
+
+
+def test_yarrrml_reference_url_with_datatype_is_literal(tmp_path):
+    csv_path = tmp_path / "data.csv"
+    csv_path.write_text("id,url\n1,https://example.com/faq/\n", encoding="utf-8")
+    mapping_path = tmp_path / "mapping.yarrrml"
+    mapping_path.write_text(
+        f"""
+prefixes:
+  ex: "http://example.com/"
+  xsd: "http://www.w3.org/2001/XMLSchema#"
+mappings:
+  m1:
+    sources:
+      - "{csv_path.as_posix()}~csv"
+    s: "http://example.com/page/$(id)"
+    po:
+      - p: ex:url
+        o:
+          - value: "$(url)"
+            datatype: xsd:string
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    config = f"[DataSource]\nmappings={mapping_path.as_posix()}"
+    graph = morph_kgc.materialize(config)
+    object_ = _object_for_predicate(graph, "http://example.com/url")
+    assert isinstance(object_, Literal)
+    assert str(object_) == "https://example.com/faq/"
+
+
+def test_yarrrml_reference_url_with_language_is_literal(tmp_path):
+    csv_path = tmp_path / "data.csv"
+    csv_path.write_text("id,url\n1,https://example.com/faq/\n", encoding="utf-8")
+    mapping_path = tmp_path / "mapping.yarrrml"
+    mapping_path.write_text(
+        f"""
+prefixes:
+  ex: "http://example.com/"
+mappings:
+  m1:
+    sources:
+      - "{csv_path.as_posix()}~csv"
+    s: "http://example.com/page/$(id)"
+    po:
+      - p: ex:url
+        o:
+          - value: "$(url)"
+            language: en
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    config = f"[DataSource]\nmappings={mapping_path.as_posix()}"
+    graph = morph_kgc.materialize(config)
+    object_ = _object_for_predicate(graph, "http://example.com/url")
+    assert isinstance(object_, Literal)
+    assert object_.language == "en"
+    assert str(object_) == "https://example.com/faq/"

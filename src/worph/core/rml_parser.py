@@ -73,9 +73,9 @@ def _parse_term_map(graph: Graph, node: Any, function_defs: dict[str, FnmlCall])
     fn_call = None
     if function_value is not None:
         fn_call = function_defs.get(str(function_value))
-    elif fnml_execution is not None:
+    if fn_call is None and fnml_execution is not None:
         fn_call = _parse_fnml_execution(graph, fnml_execution, function_defs)
-    elif function_execution is not None:
+    if fn_call is None and function_execution is not None:
         fn_call = _parse_rml_function_execution(graph, function_execution, function_defs)
 
     norm_term_type = None
@@ -84,6 +84,8 @@ def _parse_term_map(graph: Graph, node: Any, function_defs: dict[str, FnmlCall])
         if term_text.startswith(RR):
             term_text = term_text[len(RR) :]
         norm_term_type = term_text
+    if norm_term_type is None and isinstance(constant, URIRef) and datatype is None and language is None:
+        norm_term_type = "IRI"
     if norm_term_type is None and template is not None and datatype is None and language is None:
         template_text = str(template)
         if template_text.startswith(("http://", "https://", "urn:")):
@@ -453,8 +455,22 @@ def parse_rml(path: str, *, file_path_override: str | None = None, db_url: str |
             objs += list(graph.objects(pom, _u(RML_OLD, "object")))
             for obj in objs:
                 value = _object_value(obj)
-                term_type = "iri" if isinstance(obj, URIRef) else "literal"
-                obj_maps.append(ObjectMapSpec(term_map=TermMap(constant=value, term_type=term_type)))
+                if isinstance(obj, URIRef):
+                    obj_maps.append(ObjectMapSpec(term_map=TermMap(constant=value, term_type="iri")))
+                    continue
+                if isinstance(obj, Literal):
+                    obj_maps.append(
+                        ObjectMapSpec(
+                            term_map=TermMap(
+                                constant=value,
+                                term_type="literal",
+                                datatype=str(obj.datatype) if obj.datatype is not None else None,
+                                language=obj.language,
+                            )
+                        )
+                    )
+                    continue
+                obj_maps.append(ObjectMapSpec(term_map=TermMap(constant=value, term_type="literal")))
 
             if pred_maps and obj_maps:
                 po_maps.append(PredicateObjectMap(predicate_maps=pred_maps, object_maps=obj_maps))

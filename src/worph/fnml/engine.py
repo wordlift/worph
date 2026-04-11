@@ -18,7 +18,10 @@ def _resolve_param(param_value: Any, row_getter, evaluate_call):
         return row_getter(param_value["reference"])
     if isinstance(param_value, dict) and "template" in param_value:
         template = str(param_value["template"])
-        return _TEMPLATE_PATTERN.sub(lambda m: str(row_getter(m.group(1)) or ""), template)
+        return _TEMPLATE_PATTERN.sub(
+            lambda m: "" if (value := row_getter(m.group(1))) is None else str(value),
+            template,
+        )
     return param_value
 
 

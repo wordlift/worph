@@ -45,6 +45,8 @@ def test_normalize_po_key_and_expand_prefixed():
             ["ex:q", "$(v)"],
             ["ex:r", "v", "iri"],
             ["ex:s", "v", "xsd:string"],
+            ["ex:t", "v", "en~lang"],
+            ["ex:u", "v", "$(lang)~lang"],
         ]
     }
     normalized = y._normalize_po_key(mapping)
@@ -52,6 +54,8 @@ def test_normalize_po_key_and_expand_prefixed():
     assert normalized[1] == {"p": "ex:q", "o": "$(v)"}
     assert normalized[2] == {"p": "ex:r", "o": {"value": "v", "type": "iri"}}
     assert normalized[3] == {"p": "ex:s", "o": {"value": "v", "datatype": "xsd:string"}}
+    assert normalized[4] == {"p": "ex:t", "o": {"value": "v", "language": "en"}}
+    assert normalized[5] == {"p": "ex:u", "o": {"value": "v", "language": "$(lang)"}}
     assert y._normalize_po_key({"predicateobjects": [{"p": "a", "o": "b"}]}) == [{"p": "a", "o": "b"}]
     assert y._normalize_po_key({"predicateObjects": [{"p": "a", "o": "b"}]}) == [{"p": "a", "o": "b"}]
     assert y._normalize_po_key({"po": "bad"}) == []
@@ -68,7 +72,7 @@ def test_normalize_po_key_and_expand_prefixed():
 
 def test_parse_function_call_and_term_map_variants():
     prefixes = {"ex": "http://example.com/", "xsd": "http://www.w3.org/2001/XMLSchema#"}
-    external = {"v": "external", "id": "99"}
+    external = {"v": "external", "id": "99", "lang": "en"}
     call = y._parse_function_call(
         {
             "function": "ex:fn",
@@ -95,6 +99,15 @@ def test_parse_function_call_and_term_map_variants():
     assert call.parameters[4][1] == "true"
     assert call.parameters[5][1] == "42"
 
+    short_call = y._parse_function_call(
+        {"function": "ex:toLower(ex:p = ex:color_$(id))"},
+        prefixes,
+        external,
+    )
+    assert short_call.function_iri == "http://example.com/toLower"
+    assert short_call.parameters[0][0] == "http://example.com/p"
+    assert short_call.parameters[0][1]["template"] == "http://example.com/color_{id}"
+
     assert y._yarrrml_template_to_rr("x $( id ) y") == "x {id} y"
 
     tm = y._term_map_from_object_spec("$(v)", prefixes, external)
@@ -105,6 +118,8 @@ def test_parse_function_call_and_term_map_variants():
     assert tm.reference == "new" and tm.term_type == "iri"
     tm = y._term_map_from_object_spec("ex:$(id)", prefixes, external)
     assert tm.template == "http://example.com/{id}" and tm.term_type == "iri"
+    tm = y._term_map_from_object_spec("urn:faq:$(id)", prefixes, external)
+    assert tm.template == "urn:faq:{id}" and tm.term_type == "iri"
     tm = y._term_map_from_object_spec("$raw", prefixes, external)
     assert tm.template == "$raw"
     tm = y._term_map_from_object_spec("https://example.com", prefixes, external)
@@ -118,6 +133,12 @@ def test_parse_function_call_and_term_map_variants():
         external,
     )
     assert fn_tm.term_type == "iri"
+    fn_tm_upper = y._term_map_from_object_spec(
+        {"function": "ex:fn", "parameters": [], "type": "IRI"},
+        prefixes,
+        external,
+    )
+    assert fn_tm_upper.term_type == "iri"
     assert fn_tm.datatype == "http://www.w3.org/2001/XMLSchema#string"
     assert fn_tm.language == "en"
 
@@ -129,6 +150,20 @@ def test_parse_function_call_and_term_map_variants():
     assert ref_tm.template == "http://example.com/{id}" and ref_tm.term_type == "literal"
     ref_tm = y._term_map_from_object_spec({"value": "https://example.com", "type": "iri"}, prefixes, external)
     assert ref_tm.term_type == "iri"
+    lang_tm = y._term_map_from_object_spec({"value": "x", "language": "en"}, prefixes, external)
+    assert lang_tm.language == "en"
+    assert lang_tm.language_map is None
+    lang_ref_tm = y._term_map_from_object_spec({"value": "x", "language": "$(row_lang)"}, prefixes, external)
+    assert lang_ref_tm.language is None
+    assert lang_ref_tm.language_map is not None
+    assert lang_ref_tm.language_map.reference == "row_lang"
+    lang_external_tm = y._term_map_from_object_spec({"value": "x", "language": "$(lang)"}, prefixes, external)
+    assert lang_external_tm.language == "en"
+    assert lang_external_tm.language_map is None
+    lang_template_tm = y._term_map_from_object_spec({"value": "x", "language": "$(lang)-$(id)"}, prefixes, external)
+    assert lang_template_tm.language is None
+    assert lang_template_tm.language_map is not None
+    assert lang_template_tm.language_map.template == "{lang}-{id}"
     assert y._term_map_from_object_spec({"x": 1}, prefixes, external).term_type == "literal"
 
 
@@ -154,6 +189,29 @@ def test_build_po_map_mapping_and_condition_parsing():
     assert po.object_maps[0].join_conditions[0].child == "child"
     assert po.object_maps[0].join_conditions[0].parent == "parent"
     assert po.condition is not None
+
+    po_dict_condition = y._build_po_map(
+        {
+            "p": "ex:p",
+            "o": {
+                "mapping": "parent",
+                "condition": {
+                    "function": "equal",
+                    "parameters": [
+                        {"parameter": "str1", "value": "$(child)"},
+                        {"parameter": "str2", "value": "$(parent)"},
+                    ],
+                },
+            },
+        },
+        prefixes,
+        {},
+    )
+    assert po_dict_condition.object_maps[0].join_conditions[0].child == "child"
+    assert po_dict_condition.object_maps[0].join_conditions[0].parent == "parent"
+
+    po_qualified_mapping = y._build_po_map({"p": "ex:p", "o": {"mapping": "yarrrml:parent"}}, prefixes, {})
+    assert po_qualified_mapping.object_maps[0].parent_triples_map == "yarrrml:parent"
 
     po_without_mapping = y._build_po_map({"predicates": "ex:q", "objects": "$(x)"}, prefixes, {})
     assert po_without_mapping.object_maps[0].term_map.reference == "x"
