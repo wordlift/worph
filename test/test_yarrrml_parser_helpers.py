@@ -107,13 +107,37 @@ def test_parse_function_call_and_term_map_variants():
     assert short_call.function_iri == "http://example.com/toLower"
     assert short_call.parameters[0][0] == "http://example.com/p"
     assert short_call.parameters[0][1]["template"] == "http://example.com/color_{id}"
+    concat_call = y._parse_function_call(
+        {"function": "ex:fn", "parameters": [{"parameter": "ex:p", "value": "$(concat('https://e', //a/@href))"}]},
+        prefixes,
+        external,
+    )
+    assert concat_call.parameters[0][1] == {"template": "https://e{//a/@href}"}
+    assert y._concat_expr_to_rr_template("concat('x', concat('y', //a/@href))") == "xy{//a/@href}"
+    assert y._concat_expr_to_rr_template(r"concat('C:\\path', //a/@href)") == r"C:\path{//a/@href}"
+    shorthand_with_commas = y._parse_function_call(
+        {"function": "ex:fn(ex:p = concat('a', 'b'), ex:q = ex:color_$(id))"},
+        prefixes,
+        external,
+    )
+    assert shorthand_with_commas.parameters[0] == ("http://example.com/p", "concat('a', 'b')")
+    assert shorthand_with_commas.parameters[1][0] == "http://example.com/q"
+    assert shorthand_with_commas.parameters[1][1] == {"template": "http://example.com/color_{id}"}
 
     assert y._yarrrml_template_to_rr("x $( id ) y") == "x {id} y"
+    assert (
+        y._yarrrml_template_to_rr(
+            "https://data.example.test$(//div[contains(concat(' ', normalize-space(@class), ' '), ' product-item ')]/@id)"
+        )
+        == "https://data.example.test{//div[contains(concat(' ', normalize-space(@class), ' '), ' product-item ')]/@id}"
+    )
 
     tm = y._term_map_from_object_spec("$(v)", prefixes, external)
     assert tm.constant == "external" and tm.term_type == "literal"
     tm = y._term_map_from_object_spec("$(\\_id)", prefixes, external)
     assert tm.constant == "99"
+    tm = y._term_map_from_object_spec("$(concat('https://e', //a/@href))", prefixes, external)
+    assert tm.template == "https://e{//a/@href}" and tm.term_type == "literal"
     tm = y._term_map_from_object_spec("$(new)~iri", prefixes, external)
     assert tm.reference == "new" and tm.term_type == "iri"
     tm = y._term_map_from_object_spec("ex:$(id)", prefixes, external)
@@ -150,6 +174,12 @@ def test_parse_function_call_and_term_map_variants():
     assert ref_tm.template == "http://example.com/{id}" and ref_tm.term_type == "literal"
     ref_tm = y._term_map_from_object_spec({"value": "https://example.com", "type": "iri"}, prefixes, external)
     assert ref_tm.term_type == "iri"
+    concat_tm = y._term_map_from_object_spec(
+        {"value": "$(concat('https://e', //a/@href))", "datatype": "xsd:string"},
+        prefixes,
+        external,
+    )
+    assert concat_tm.template == "https://e{//a/@href}" and concat_tm.term_type == "literal"
     lang_tm = y._term_map_from_object_spec({"value": "x", "language": "en"}, prefixes, external)
     assert lang_tm.language == "en"
     assert lang_tm.language_map is None

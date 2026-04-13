@@ -74,4 +74,4 @@ The workflow is complete only when:
 
 ## Current Release Example
 
-- Patch target example: `v0.1.10`
+- Patch target example: `v0.1.11`

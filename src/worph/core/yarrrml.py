@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import os
 import re
+from ast import literal_eval
 from typing import Any
 
 import yaml
 
 from .model import FnmlCall, LogicalSource, MappingDocument, ObjectMapSpec, PredicateObjectMap, TermMap, TriplesMap
 
-_TEMPLATE_RE = re.compile(r"\$\(([^)]+)\)")
+_FUNC_EXPR_RE = re.compile(r"(?P<name>[A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)\((?P<body>.*)\)")
 
 
 DEFAULT_PREFIXES = {
@@ -131,8 +132,135 @@ def _expand_prefixed(value: Any, prefixes: dict[str, str]) -> Any:
     return value
 
 
+def _scan_wrapped_expr(text: str, start: int) -> tuple[str, int] | None:
+    if not text.startswith("$(", start):
+        return None
+    i = start + 2
+    depth = 1
+    in_quote: str | None = None
+    escaped = False
+    while i < len(text):
+        ch = text[i]
+        if in_quote is not None:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == in_quote:
+                in_quote = None
+        else:
+            if ch in {"'", '"'}:
+                in_quote = ch
+            elif ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return text[start + 2 : i], i
+        i += 1
+    return None
+
+
+def _split_top_level_args(body: str) -> list[str]:
+    args: list[str] = []
+    start = 0
+    depth = 0
+    in_quote: str | None = None
+    escaped = False
+    for i, ch in enumerate(body):
+        if in_quote is not None:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == in_quote:
+                in_quote = None
+            continue
+        if ch in {"'", '"'}:
+            in_quote = ch
+            continue
+        if ch == "(":
+            depth += 1
+            continue
+        if ch == ")":
+            depth -= 1
+            continue
+        if ch == "," and depth == 0:
+            args.append(body[start:i].strip())
+            start = i + 1
+    tail = body[start:].strip()
+    if tail:
+        args.append(tail)
+    return args
+
+
+def _wrapped_expr_value(value: str) -> str:
+    parsed = _scan_wrapped_expr(value, 0)
+    if parsed is not None and parsed[1] == len(value) - 1:
+        return parsed[0]
+    return value[2:-1]
+
+
+def _resolve_wrapped_expr(raw_expr: str, external_values: dict[str, Any]) -> tuple[str, Any]:
+    if raw_expr in external_values:
+        return ("constant", external_values[raw_expr])
+    if raw_expr.startswith("\\_") and raw_expr[2:] in external_values:
+        return ("constant", external_values[raw_expr[2:]])
+
+    concat_template = _concat_expr_to_rr_template(raw_expr)
+    if concat_template is not None:
+        return ("template", concat_template)
+
+    reference_name = raw_expr[1:] if raw_expr.startswith("\\") else raw_expr
+    return ("reference", reference_name)
+
+
+def _concat_expr_to_rr_template(expr: str) -> str | None:
+    match = _FUNC_EXPR_RE.fullmatch(expr.strip())
+    if match is None:
+        return None
+    function_name = match.group("name").split(":")[-1].lower()
+    if function_name != "concat":
+        return None
+
+    parts: list[str] = []
+    for arg in _split_top_level_args(match.group("body")):
+        if not arg:
+            continue
+        try:
+            parsed = literal_eval(arg)
+        except Exception:
+            nested_concat = _concat_expr_to_rr_template(arg)
+            if nested_concat is not None:
+                parts.append(nested_concat)
+                continue
+            parts.append("{" + arg + "}")
+            continue
+        if isinstance(parsed, str):
+            parts.append(parsed)
+        else:
+            parts.append(str(parsed))
+    return "".join(parts)
+
+
 def _yarrrml_template_to_rr(template: str) -> str:
-    return _TEMPLATE_RE.sub(lambda m: "{" + m.group(1).strip() + "}", template)
+    chunks: list[str] = []
+    cursor = 0
+    while cursor < len(template):
+        next_start = template.find("$(", cursor)
+        if next_start < 0:
+            chunks.append(template[cursor:])
+            break
+        chunks.append(template[cursor:next_start])
+        parsed = _scan_wrapped_expr(template, next_start)
+        if parsed is None:
+            chunks.append(template[next_start : next_start + 2])
+            cursor = next_start + 2
+            continue
+        token, end = parsed
+        chunks.append("{" + token.strip() + "}")
+        cursor = end + 1
+    return "".join(chunks)
 
 
 def _parse_function_call(obj: dict[str, Any], prefixes: dict[str, str], external_values: dict[str, Any]) -> FnmlCall:
@@ -144,7 +272,7 @@ def _parse_function_call(obj: dict[str, Any], prefixes: dict[str, str], external
         args = raw_args[:-1].strip()
         if args:
             parsed_parameters: list[dict[str, str]] = []
-            for chunk in args.split(","):
+            for chunk in _split_top_level_args(args):
                 if "=" not in chunk:
                     continue
                 name, value = chunk.split("=", 1)
@@ -162,15 +290,13 @@ def _parse_function_call(obj: dict[str, Any], prefixes: dict[str, str], external
         if isinstance(value, dict) and "function" in value:
             value = _term_map_from_object_spec(value, prefixes, external_values).function_call
         elif isinstance(value, str) and value.startswith("$(") and value.endswith(")"):
-            raw_ref = value[2:-1]
-            escaped = raw_ref.startswith("\\")
-            ref_name = raw_ref.replace("\\", "")
-            if ref_name in external_values:
-                value = external_values[ref_name]
-            elif escaped and ref_name.startswith("_") and ref_name[1:] in external_values:
-                value = external_values[ref_name[1:]]
+            kind, resolved = _resolve_wrapped_expr(_wrapped_expr_value(value), external_values)
+            if kind == "constant":
+                value = resolved
+            elif kind == "template":
+                value = {"template": resolved}
             else:
-                value = {"reference": ref_name}
+                value = {"reference": resolved}
         elif isinstance(value, str) and "$(" in value:
             expanded_value = value
             if ":" in value and not value.startswith(("http://", "https://", "<")):
@@ -218,14 +344,12 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
             force_iri = True
 
         if obj.startswith("$(") and obj.endswith(")"):
-            raw_ref = obj[2:-1]
-            escaped = raw_ref.startswith("\\")
-            ref_name = raw_ref.replace("\\", "")
-            if ref_name in external_values:
-                return TermMap(constant=external_values[ref_name], term_type="iri" if force_iri else "literal")
-            if escaped and ref_name.startswith("_") and ref_name[1:] in external_values:
-                return TermMap(constant=external_values[ref_name[1:]], term_type="iri" if force_iri else "literal")
-            return TermMap(reference=ref_name, term_type="iri" if force_iri else "literal")
+            kind, resolved = _resolve_wrapped_expr(_wrapped_expr_value(obj), external_values)
+            if kind == "constant":
+                return TermMap(constant=resolved, term_type="iri" if force_iri else "literal")
+            if kind == "template":
+                return TermMap(template=resolved, term_type="iri" if force_iri else "literal")
+            return TermMap(reference=resolved, term_type="iri" if force_iri else "literal")
         if "$(" in obj:
             expanded = obj
             if ":" in obj and not obj.startswith(("http://", "https://", "<")):
@@ -266,27 +390,25 @@ def _term_map_from_object_spec(obj: Any, prefixes: dict[str, str], external_valu
         term_type = obj.get("type")
 
         if isinstance(value, str) and value.startswith("$(") and value.endswith(")"):
-            raw_ref = value[2:-1]
-            escaped = raw_ref.startswith("\\")
-            ref_name = raw_ref.replace("\\", "")
-            if ref_name in external_values:
+            kind, resolved = _resolve_wrapped_expr(_wrapped_expr_value(value), external_values)
+            if kind == "constant":
                 return TermMap(
-                    constant=external_values[ref_name],
+                    constant=resolved,
                     datatype=datatype,
                     language=language,
                     language_map=language_map,
                     term_type=(term_type or "literal"),
                 )
-            if escaped and ref_name.startswith("_") and ref_name[1:] in external_values:
+            if kind == "template":
                 return TermMap(
-                    constant=external_values[ref_name[1:]],
+                    template=resolved,
                     datatype=datatype,
                     language=language,
                     language_map=language_map,
                     term_type=(term_type or "literal"),
                 )
             return TermMap(
-                reference=ref_name,
+                reference=resolved,
                 datatype=datatype,
                 language=language,
                 language_map=language_map,
